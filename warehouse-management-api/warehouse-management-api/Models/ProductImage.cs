@@ -1,4 +1,4 @@
-﻿namespace warehouse_management_api.Contracts;
+﻿namespace warehouse_management_api.Models;
 
 public class ProductImage
 {
