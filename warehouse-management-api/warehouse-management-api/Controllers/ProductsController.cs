@@ -1,13 +1,21 @@
-﻿namespace warehouse_management_api.Controllers;
+﻿using Microsoft.AspNetCore.Mvc;
+using warehouse_management_api.Models;
+using warehouse_management_api.Contracts;
+using warehouse_management_api.Data;
+using warehouse_management_api.Services;
+namespace warehouse_management_api.Controllers;
 
-using Microsoft.AspNetCore.Mvc;
-using Models;
-using Contracts;
-using Data;
+
 [ApiController]
 [Route("api/products" )]
 public class ProductsController : ControllerBase
 {
+    private readonly ISupplierService _supplierService;
+
+    public ProductsController(ISupplierService supplierService)
+    {
+        _supplierService = supplierService;
+    }
     //1. Get all products 
     [HttpGet()]
     public IActionResult GetAllProducts([FromQuery] bool onlyAvailable = false)
@@ -210,5 +218,33 @@ public class ProductsController : ControllerBase
         };
 
         return Ok(new { language = culture, serverTime = formatted });
+    }
+    //assign supplier to product
+    [HttpPost("{id}/assign-supplier/{supplierId}")]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public IActionResult AssignSupplier([FromRoute] string id, [FromRoute] string supplierId)
+    {
+        var product = FakeWarehouseStore.Products.FirstOrDefault(p => p.Id == id);
+
+        if (product is null)
+        {
+            return NotFound($"Product with id '{id}' was not found.");
+        }
+
+        if (!_supplierService.Exists(supplierId))
+        {
+            return NotFound($"Supplier with id '{supplierId}' was not found.");
+        }
+
+        if (product.IsArchived)
+        {
+            return BadRequest("Cannot assign a supplier to an archived product.");
+        }
+
+        product.SupplierId = supplierId;
+        product.LastUpdatedAt = DateTime.UtcNow;
+
+        return Ok(product);
     }
 }
