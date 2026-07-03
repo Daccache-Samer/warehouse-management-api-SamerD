@@ -21,4 +21,5 @@ public class Product
     public required bool IsArchived { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime LastUpdatedAt { get; set; }
+    public string? SupplierId { get; set; }
 }
