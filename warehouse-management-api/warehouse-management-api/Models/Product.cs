@@ -13,11 +13,11 @@ public class Product
     public string SKU { get; set; } =  string.Empty;
     [StringLength(500,MinimumLength = 5,ErrorMessage = "invalid Description")]
     public string Description { get; set; }  = string.Empty;
-    public required int Price{get;set;}
+    public required decimal Price{get;set;}
     public required int QuantityInStock { get; set; }
     [StringLength(50,MinimumLength = 5,ErrorMessage = "invalid SupplierName")]
     public required string SupplierName{ get; set; } 
-    public required DateTime ExpiryDate { get; set; }
+    public DateTime ExpiryDate { get; set; }
     public required bool IsArchived { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime LastUpdatedAt { get; set; }

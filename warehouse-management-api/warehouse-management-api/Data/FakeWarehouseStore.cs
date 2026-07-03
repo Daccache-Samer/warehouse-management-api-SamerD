@@ -1,7 +1,6 @@
-﻿using warehouse_management_api.Models;
+﻿namespace warehouse_management_api.Data;
 
-namespace warehouse_management_api.Data;
-
+using Models;
 public static class FakeWarehouseStore
 {
     public static List<Product> Products { set; get; } =

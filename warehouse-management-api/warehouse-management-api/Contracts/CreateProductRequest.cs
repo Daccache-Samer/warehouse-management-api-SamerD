@@ -4,8 +4,8 @@ public record CreateProductRequest(
     string Name,
     string SKU,
     string Description,
-    int Price,
+    decimal Price,
     int QuantityInStock,
     string SupplierName,
-    DateTimeOffset ExpiryDate
+    DateTime ExpiryDate
 );
