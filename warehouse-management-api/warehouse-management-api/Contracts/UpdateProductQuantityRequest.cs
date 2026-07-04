@@ -1,0 +1,3 @@
+﻿namespace warehouse_management_api.Contracts;
+
+public record UpdateProductQuantityRequest(int QuantityInStock);
