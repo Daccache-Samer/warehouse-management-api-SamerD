@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace warehouse_management_api.Models;
+namespace Warehouse.DomainWarehouse.Domain;
 
 public class ProductImage
 {

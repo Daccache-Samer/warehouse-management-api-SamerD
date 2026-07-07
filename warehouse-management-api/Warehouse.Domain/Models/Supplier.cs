@@ -1,4 +1,4 @@
-﻿namespace warehouse_management_api.Models;
+﻿namespace Warehouse.DomainWarehouse.Domain;
 
 public class Supplier
 {
