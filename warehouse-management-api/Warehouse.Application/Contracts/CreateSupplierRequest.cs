@@ -1,4 +1,4 @@
-﻿namespace warehouse_management_api.Contracts;
+﻿namespace Warehouse.Application;
 
 public class CreateSupplierRequest
 {
