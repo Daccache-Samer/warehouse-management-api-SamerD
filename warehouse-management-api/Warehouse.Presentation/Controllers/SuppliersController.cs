@@ -1,6 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using warehouse_management_api.Contracts;
-using warehouse_management_api.Services;
 
 namespace warehouse_management_api.Controllers;
 

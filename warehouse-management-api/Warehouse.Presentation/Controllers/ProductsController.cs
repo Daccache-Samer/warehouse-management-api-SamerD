@@ -2,7 +2,7 @@
 using warehouse_management_api.Models;
 using warehouse_management_api.Contracts;
 using warehouse_management_api.Data;
-using warehouse_management_api.Services;
+
 namespace warehouse_management_api.Controllers;
 
 
