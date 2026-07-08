@@ -290,3 +290,116 @@ Base route: `api/suppliers`
 
 On success, sets `product.SupplierId` and updates `LastUpdatedAt`.
 
+## Session 03 — DDD Architecture Refactor
+
+### Why This Refactor
+This session restructures the same project — same repository, same public API behavior — into
+four layers with a strict dependency direction:
+`Warehouse.Domain` has zero project references and zero NuGet package references — it doesn't
+know ASP.NET Core exists, doesn't know EF Core exists, doesn't know how data is stored. Every
+other layer depends on it; it depends on nothing.
+
+### Layer Responsibilities
+
+| Layer | Responsibility | Depends on | Contains |
+|---|---|---|---|
+| **Warehouse.Domain** | Core business rules and entities | *(nothing)* | `Product`, `Supplier`, `StockMovement`, `WarehouseItem`, `ProductImage`, repository interfaces (`IProductRepository`, `ISupplierRepository`), `IFileStorage`, `DomainException` |
+| **Warehouse.Application** | Orchestrates use cases; contains no business rules of its own | Domain | MediatR `Command`/`Query` + `Handler` pairs (one folder per use case), `ProductDto`/`SupplierDto`, `NotFoundException`, `ValidationException`, `ConflictException` |
+| **Warehouse.Infrastructure** | Technical implementation details | Domain | `ProductRepository`, `SupplierRepository` (in-memory), `LocalFileStorage` |
+| **Warehouse.Presentation** | HTTP entry point only | Application, Infrastructure (composition root only — see note below) | Controllers, `Contracts` (request DTOs), `ExceptionHandlingMiddleware`, `Program.cs` |
+
+Business rules that used to live as scattered `if` statements across controller actions now live
+once, on the domain entities themselves:
+
+- Product name and SKU are required — enforced in `Product.Create`
+- Price must be greater than zero — enforced in `Product.Create` and `Product.UpdatePrice`
+- Quantity cannot be negative — enforced in `Product.Create` and `Product.UpdateQuantity`
+- Archived products cannot be updated — enforced in every `Product` mutation method
+- Inactive suppliers cannot be assigned to products — enforced in `Product.AssignSupplier`
+
+### CQRS with MediatR
+
+Product and Supplier use cases are split into **Commands** (create, update, archive, assign,
+deactivate — anything that changes state) and **Queries** (get, list, search — anything that only
+reads state), each with its own `IRequest`/`IRequestHandler` pair, dispatched via MediatR.
+
+> **Note:** MediatR is pinned to version `[12.5.0]` in `Warehouse.Application.csproj`. Versions
+> 13.0.0 and later require a commercial license; 12.5.0 is the last version released under the
+> free Apache 2.0 license.
+
+### Refactored Endpoints
+
+All Session 02 endpoints preserve their original behavior and status codes. Internally, every
+action now does: bind HTTP input → `_mediator.Send(...)` → return status code. No business logic
+or direct storage access remains in any controller.
+
+**Products** (`api/products`)
+
+| Method | Route | Use Case (Command/Query) |
+|---|---|---|
+| GET | `/api/products` | `ListProductsQuery` |
+| GET | `/api/products/{id}` | `GetProductByIdQuery` |
+| GET | `/api/products/search` | `SearchProductsQuery` |
+| POST | `/api/products` | `CreateProductCommand` |
+| POST | `/api/products/{id}/quantity` | `UpdateProductQuantityCommand` |
+| POST | `/api/products/{id}/price` | `UpdateProductPriceCommand` |
+| POST | `/api/products/{id}/image` | `AddProductImageCommand` |
+| DELETE | `/api/products/{id}` | `ArchiveProductCommand` (soft delete) |
+| GET | `/api/products/server-time` | *(no use case — pure computation, stays in controller)* |
+| POST | `/api/products/{id}/assign-supplier/{supplierId}` | `AssignSupplierToProductCommand` |
+
+**Suppliers** (`api/suppliers`)
+
+| Method | Route | Use Case (Command/Query) |
+|---|---|---|
+| GET | `/api/suppliers` | `ListSuppliersQuery` |
+| GET | `/api/suppliers/{id}` | `GetSupplierByIdQuery` |
+| POST | `/api/suppliers` | `CreateSupplierCommand` |
+| DELETE | `/api/suppliers/{id}` | `DeactivateSupplierCommand` (soft delete) |
+
+### Error Handling
+
+A single `ExceptionHandlingMiddleware` maps domain/application exceptions to HTTP status codes
+centrally, instead of repeating `try/catch` in every controller action:
+
+| Exception | Status Code |
+|---|---|
+| `NotFoundException` | 404 |
+| `ConflictException` | 409 |
+| `ValidationException` | 400 |
+| `DomainException` | 400 |
+
+### Swagger
+
+![Products endpoints](docs/screenshots/session03-products-swagger.png)
+![Suppliers endpoints](docs/screenshots/session03-suppliers-swagger.png)
+![Create product — 201 response](docs/screenshots/session03-create-product.png)
+![Update price on archived product — 400 response](docs/screenshots/session03-archived-error.png)
+
+### Tests
+
+Two test projects added under `tests/`:
+
+- **Warehouse.Domain.Tests** — domain rule tests, no mocking required
+- **Warehouse.Application.Tests** — use case tests, mocked repositories via NSubstitute
+
+| Test | Result |
+|---|---|
+| `Create_WithZeroOrNegativePrice_Throws` | ✅ |
+| `UpdatePrice_WithZeroOrNegativeValue_Throws` | ✅ |
+| `Create_WithNegativeQuantity_Throws` | ✅ |
+| `UpdateQuantity_WithNegativeValue_Throws` | ✅ |
+| `UpdatePrice_OnArchivedProduct_Throws` | ✅ |
+| `UpdateQuantity_OnArchivedProduct_Throws` | ✅ |
+| `AssignSupplier_WithInactiveSupplier_Throws` | ✅ |
+| `AssignSupplier_WithActiveSupplier_Succeeds` | ✅ |
+| `Handle_WithValidRequest_CallsRepositoryAddAsync` | ✅ |
+| `Handle_WithDuplicateSku_ThrowsAndDoesNotCallAddAsync` | ✅ |
+
+**10/10 passed.** Run with:
+
+```bash
+dotnet test
+```
+
+![Test results](docs/screenshots/session03-test-results.png)
