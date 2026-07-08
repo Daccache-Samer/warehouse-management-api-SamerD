@@ -1,10 +1,13 @@
 using Microsoft.OpenApi;
-using warehouse_management_api.Services;
+using Warehouse.DomainWarehouse.Domain.Products;
+using Warehouse.DomainWarehouse.Domain.Suppliers;
+using Warehouse.Infrastructure.Persistence.InMemory;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();          
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddSingleton<IProductRepository, ProductRepository>();
+builder.Services.AddSingleton<ISupplierRepository, SupplierRepository>();
 builder.Services.AddSwaggerGen(options =>
 {
     options.MapType<IFormFile>(() => new OpenApiSchema
