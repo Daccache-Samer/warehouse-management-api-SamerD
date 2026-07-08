@@ -2,4 +2,4 @@
 
 namespace Warehouse.Application.Suppliers.Queries.ListSuppliers;
 
-public abstract record ListSuppliersQuery : IRequest<IReadOnlyList<SupplierDto>>;
+public record ListSuppliersQuery : IRequest<IReadOnlyList<SupplierDto>>;

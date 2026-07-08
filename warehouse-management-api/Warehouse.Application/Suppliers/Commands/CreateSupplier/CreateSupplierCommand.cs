@@ -2,7 +2,7 @@
 
 namespace Warehouse.Application.Suppliers.Commands.CreateSupplier;
 
-public abstract record CreateSupplierCommand(
+public record CreateSupplierCommand(
     string Name,
     string Country,
     string ContactEmail,

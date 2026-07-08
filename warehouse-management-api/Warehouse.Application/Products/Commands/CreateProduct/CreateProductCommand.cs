@@ -2,7 +2,7 @@
 
 namespace Warehouse.Application.Products.Commands.CreateProduct;
 
-public abstract record CreateProductCommand(
+public record CreateProductCommand(
     string Name,
     string SKU,
     string Description,

@@ -2,4 +2,4 @@
 
 namespace Warehouse.Application.Products.Commands.ArchiveProduct;
 
-public abstract record ArchiveProductCommand(string ProductId) : IRequest;
+public record ArchiveProductCommand(string ProductId) : IRequest;

@@ -2,4 +2,4 @@
 
 namespace Warehouse.Application.Products.Queries.GetProductById;
 
-public abstract record GetProductByIdQuery(string ProductId) : IRequest<ProductDto?>;
+public record GetProductByIdQuery(string ProductId) : IRequest<ProductDto?>;

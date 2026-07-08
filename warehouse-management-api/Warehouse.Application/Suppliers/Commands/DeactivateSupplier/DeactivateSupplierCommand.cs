@@ -2,4 +2,4 @@
 
 namespace Warehouse.Application.Suppliers.Commands.DeactivateSupplier;
 
-public abstract record DeactivateSupplierCommand(string SupplierId) : IRequest;
+public record DeactivateSupplierCommand(string SupplierId) : IRequest;
