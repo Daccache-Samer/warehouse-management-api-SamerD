@@ -1,0 +1,47 @@
+using MediatR;
+using Microsoft.OpenApi;
+using Warehouse.Application.Products.Commands.CreateProduct;
+using Warehouse.DomainWarehouse.Domain.Products;
+using Warehouse.DomainWarehouse.Domain.Suppliers;
+using Warehouse.Infrastructure.Persistence.InMemory;
+using Warehouse.Infrastructure.Storage;
+using warehouse_management_api.Middleware;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.MapType<IFormFile>(() => new OpenApiSchema
+    {
+        Type = JsonSchemaType.String,
+        Format = "binary"
+    });
+});
+
+builder.Services.AddMediatR(cfg =>
+    cfg.RegisterServicesFromAssembly(typeof(CreateProductCommand).Assembly));
+
+builder.Services.AddSingleton<IProductRepository, ProductRepository>();
+builder.Services.AddSingleton<ISupplierRepository, SupplierRepository>();
+
+builder.Services.AddSingleton<IFileStorage>(sp =>
+{
+    var env = sp.GetRequiredService<IWebHostEnvironment>();
+    return new LocalFileStorage(env.WebRootPath);
+});
+
+var app = builder.Build();
+
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.MapControllers();
+
+app.Run();
