@@ -1,13 +1,15 @@
-﻿using MediatR;
+﻿using AutoMapper;
+using MediatR;
 using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Application.Products.Commands.UpdateProductQuantity;
 
-public class UpdateProductQuantityHandler(IProductRepository productRepository)
-    : IRequestHandler<UpdateProductQuantityCommand, ProductDto>
+public class UpdateProductQuantityHandler(IProductRepository productRepository,IMapper mapper)
+    : IRequestHandler<UpdateProductQuantityCommand, ProductViewModel>
 {
-    public async Task<ProductDto> Handle(UpdateProductQuantityCommand request, CancellationToken cancellationToken)
+    public async Task<ProductViewModel> Handle(UpdateProductQuantityCommand request, CancellationToken cancellationToken)
     {
         var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
                       ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
@@ -16,6 +18,6 @@ public class UpdateProductQuantityHandler(IProductRepository productRepository)
 
         await productRepository.UpdateAsync(product, cancellationToken);
 
-        return ProductDto.FromDomain(product);
+        return mapper.Map<ProductViewModel>(product);
     }
 }

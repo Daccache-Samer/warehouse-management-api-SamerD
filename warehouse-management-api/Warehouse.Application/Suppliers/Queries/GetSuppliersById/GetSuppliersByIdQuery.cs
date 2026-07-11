@@ -1,5 +1,6 @@
 ﻿using MediatR;
+using Warehouse.Application.Suppliers.ViewModels;
 
 namespace Warehouse.Application.Suppliers.Queries.GetSuppliersById;
 
-public record GetSupplierByIdQuery(string SupplierId) : IRequest<SupplierDto?>;
+public record GetSupplierByIdQuery(string SupplierId) : IRequest<SupplierViewModel?>;

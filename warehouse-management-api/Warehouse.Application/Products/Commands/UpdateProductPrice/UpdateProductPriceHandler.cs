@@ -1,13 +1,15 @@
-﻿using MediatR;
+﻿using AutoMapper;
+using MediatR;
 using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Application.Products.Commands.UpdateProductPrice;
 
-public class UpdateProductPriceHandler(IProductRepository productRepository)
-    : IRequestHandler<UpdateProductPriceCommand, ProductDto>
+public class UpdateProductPriceHandler(IProductRepository productRepository, IMapper mapper)
+    : IRequestHandler<UpdateProductPriceCommand, ProductViewModel>
 {
-    public async Task<ProductDto> Handle(UpdateProductPriceCommand request, CancellationToken cancellationToken)
+    public async Task<ProductViewModel> Handle(UpdateProductPriceCommand request, CancellationToken cancellationToken)
     {
         var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
                       ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
@@ -16,6 +18,6 @@ public class UpdateProductPriceHandler(IProductRepository productRepository)
 
         await productRepository.UpdateAsync(product, cancellationToken);
 
-        return ProductDto.FromDomain(product);
+        return mapper.Map<ProductViewModel>(product);
     }
 }

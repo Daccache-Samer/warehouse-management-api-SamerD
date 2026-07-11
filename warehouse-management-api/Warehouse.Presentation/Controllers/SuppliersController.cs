@@ -10,26 +10,19 @@ namespace warehouse_management_api.Controllers;
 
 [ApiController]
 [Route("api/suppliers")]
-public class SuppliersController : ControllerBase
+public class SuppliersController(IMediator mediator) : ControllerBase
 {
-    private readonly IMediator _mediator;
-
-    public SuppliersController(IMediator mediator)
-    {
-        _mediator = mediator;
-    }
-
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var result = await _mediator.Send(new ListSuppliersQuery());
+        var result = await mediator.Send(new ListSuppliersQuery());
         return Ok(result);
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById([FromRoute] string id)
     {
-        var result = await _mediator.Send(new GetSupplierByIdQuery(id));
+        var result = await mediator.Send(new GetSupplierByIdQuery(id));
         return result is null ? NotFound($"Supplier with id '{id}' was not found.") : Ok(result);
     }
 
@@ -37,14 +30,14 @@ public class SuppliersController : ControllerBase
     public async Task<IActionResult> Create([FromBody] CreateSupplierRequest request)
     {
         var command = new CreateSupplierCommand(request.Name, request.Country, request.ContactEmail, request.PhoneNumber);
-        var result = await _mediator.Send(command);
-        return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+        var result = await mediator.Send(command);
+        return CreatedAtAction(nameof(GetById), new { id = result.SupplierId }, result);
     }
 
     [HttpDelete("{id}")]
     public async Task<IActionResult> Deactivate([FromRoute] string id)
     {
-        await _mediator.Send(new DeactivateSupplierCommand(id));
+        await mediator.Send(new DeactivateSupplierCommand(id));
         return NoContent();
     }
 }

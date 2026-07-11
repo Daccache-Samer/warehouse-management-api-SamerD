@@ -1,16 +1,17 @@
-﻿using MediatR;
+﻿using AutoMapper;
+using MediatR;
 using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
 
 namespace Warehouse.Application.Products.Queries.SearchProducts;
 
 public class SearchProductsHandler(
-    IProductRepository productRepository,
-    ISupplierRepository supplierRepository)
-    : IRequestHandler<SearchProductsQuery, IReadOnlyList<ProductDto>>
+    IProductRepository productRepository,ISupplierRepository supplierRepository,IMapper mapper)
+    : IRequestHandler<SearchProductsQuery, IReadOnlyList<ProductViewModel>>
 {
-    public async Task<IReadOnlyList<ProductDto>> Handle(SearchProductsQuery request, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ProductViewModel>> Handle(SearchProductsQuery request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Name) && string.IsNullOrWhiteSpace(request.Supplier))
         {
@@ -36,6 +37,6 @@ public class SearchProductsHandler(
             products = products.Where(p => p.SupplierId is not null && matchingSupplierIds.Contains(p.SupplierId));
         }
 
-        return products.Select(ProductDto.FromDomain).ToList();
+        return products.Select(mapper.Map<ProductViewModel>).ToList();
     }
 }

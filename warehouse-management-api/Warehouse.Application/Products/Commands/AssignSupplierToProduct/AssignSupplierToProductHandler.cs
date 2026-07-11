@@ -1,16 +1,17 @@
-﻿using MediatR;
+﻿using AutoMapper;
+using MediatR;
 using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
 
 namespace Warehouse.Application.Products.Commands.AssignSupplierToProduct;
 
 public class AssignSupplierToProductHandler(
-    IProductRepository productRepository,
-    ISupplierRepository supplierRepository)
-    : IRequestHandler<AssignSupplierToProductCommand, ProductDto>
+    IProductRepository productRepository,ISupplierRepository supplierRepository,IMapper mapper)
+    : IRequestHandler<AssignSupplierToProductCommand, ProductViewModel>
 {
-    public async Task<ProductDto> Handle(AssignSupplierToProductCommand request, CancellationToken cancellationToken)
+    public async Task<ProductViewModel> Handle(AssignSupplierToProductCommand request, CancellationToken cancellationToken)
     {
         var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
                       ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
@@ -22,6 +23,6 @@ public class AssignSupplierToProductHandler(
 
         await productRepository.UpdateAsync(product, cancellationToken);
 
-        return ProductDto.FromDomain(product);
+        return mapper.Map<ProductViewModel>(product);
     }
 }

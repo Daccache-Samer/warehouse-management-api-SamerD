@@ -1,13 +1,15 @@
-﻿using MediatR;
+﻿using AutoMapper;
+using MediatR;
 using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Application.Products.Commands.CreateProduct;
 
-public class CreateProductHandler(IProductRepository productRepository)
-    : IRequestHandler<CreateProductCommand, ProductDto>
+public class CreateProductHandler(IProductRepository productRepository, IMapper mapper)
+    : IRequestHandler<CreateProductCommand, ProductViewModel>
 {
-    public async Task<ProductDto> Handle(CreateProductCommand request, CancellationToken cancellationToken)
+    public async Task<ProductViewModel> Handle(CreateProductCommand request, CancellationToken cancellationToken)
     {
         var existing = await productRepository.GetBySkuAsync(request.SKU, cancellationToken);
         if (existing is not null)
@@ -25,6 +27,6 @@ public class CreateProductHandler(IProductRepository productRepository)
 
         await productRepository.AddAsync(product, cancellationToken);
 
-        return ProductDto.FromDomain(product);
+        return mapper.Map<ProductViewModel>(product);
     }
 }

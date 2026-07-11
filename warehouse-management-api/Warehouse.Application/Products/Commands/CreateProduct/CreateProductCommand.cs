@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using Warehouse.Application.Products.ViewModels;
 
 namespace Warehouse.Application.Products.Commands.CreateProduct;
 
@@ -8,4 +9,4 @@ public record CreateProductCommand(
     string Description,
     decimal Price,
     int QuantityInStock,
-    DateTime ExpiryDate) : IRequest<ProductDto>;
+    DateTime ExpiryDate) : IRequest<ProductViewModel>;
