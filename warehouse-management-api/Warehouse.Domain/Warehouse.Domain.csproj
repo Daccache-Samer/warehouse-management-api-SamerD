@@ -6,6 +6,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
         <RootNamespace>Warehouse.DomainWarehouse.Domain</RootNamespace>
+        <OutputType>Library</OutputType>
     </PropertyGroup>
 
 </Project>

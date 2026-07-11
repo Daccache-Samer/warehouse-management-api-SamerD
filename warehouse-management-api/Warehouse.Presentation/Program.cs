@@ -1,4 +1,5 @@
 using MediatR;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using Warehouse.Application.Products.Commands.CreateProduct;
 using Warehouse.DomainWarehouse.Domain.Products;
@@ -6,11 +7,14 @@ using Warehouse.DomainWarehouse.Domain.Suppliers;
 using Warehouse.Infrastructure.Persistence.InMemory;
 using Warehouse.Infrastructure.Storage;
 using warehouse_management_api.Middleware;
+using Warehouse.Infrastructure.Models;
 
 var builder = WebApplication.CreateBuilder(args);
-
+var configuration = builder.Configuration;
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddDbContext<WarehouseDbFirstContext>(options =>
+    options.UseNpgsql(configuration.GetConnectionString("Default Connection")));
 builder.Services.AddSwaggerGen(options =>
 {
     options.MapType<IFormFile>(() => new OpenApiSchema
