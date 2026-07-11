@@ -400,3 +400,110 @@ dotnet test
 
 !\[Test results](docs/screenshots/session03-test-results.png)
 
+## Session 04 — Databases, EF Core & LINQ
+
+### Overview
+
+This session connects the warehouse system to a real Postgres database, built twice:
+
+- **Database First** (`session-04-database-connection-db-first`) — scaffolded from an existing schema.
+- **Code First** (`session-04-database-connection-code-first`) — migrations generated from the existing Session 03 Domain entities. **This is the branch that will be merged.**
+
+Both connect to Postgres running in Docker.
+
+```bash
+docker run --name Warehouse-DB \
+  -e POSTGRES_USER=username \
+  -e POSTGRES_PASSWORD=1234 \
+  -e POSTGRES_DB=postgresdb \
+  -p 5434:5432 \
+  -d postgres:18
+```
+
+---
+
+### Database First
+
+Scaffolded directly from a manually-created `WarehouseDbFirst` database (`Products`, `Suppliers`, `ProductImages` tables) using:
+
+```bash
+dotnet ef dbcontext scaffold "Host=localhost;Port=5434;Database=WarehouseDbFirst;Username=username;Password=1234" \
+  Npgsql.EntityFrameworkCore.PostgreSQL -o Models
+```
+
+This generates plain, convention-based entity classes and a `WarehouseDbFirstContext` — deliberately **not** the same as the Session 03 Domain entities. Since these scaffolded types have no business invariants and would require Application to reference Infrastructure directly to route them through MediatR (violating the Domain-only dependency rule), the five required LINQ endpoints were added directly onto `ProductsController` on this branch only, injecting `WarehouseDbFirstContext` alongside `IMediator`.
+
+**Endpoints added (DB First branch only):**
+
+| Method | Route | LINQ concept demonstrated |
+|---|---|---|
+| GET | `/api/products/by-supplier?supplierName=...&sortOrder=asc\|desc` | Filtering + conditional sorting |
+| GET | `/api/products/group-by-expiry-year` | `GroupBy` |
+| GET | `/api/products/group-by-expiry-year-and-country` | `GroupBy` on a composite key, joined with Supplier |
+| GET | `/api/products/count` | Aggregation (`CountAsync`) |
+| GET | `/api/products/paged?pageNumber=...&pageSize=...` | Server-side pagination (`Skip`/`Take`) |
+
+---
+
+### Code First (merged)
+
+The real Session 03 `Product`/`Supplier` Domain entities were mapped to Postgres via EF Core migrations — no new entity classes, no duplication.
+
+**WarehouseDbContext** (`Warehouse.Infrastructure/Persistence/CodeFirst/WarehouseDbContext.cs`) required minimal explicit Fluent API configuration, specifically because of choices made in Session 3's rich domain model:
+
+- `Product.SupplierId` has no navigation property on either side (a deliberate Session 3 decoupling decision) — EF's convention-based FK discovery can't detect it without being told explicitly via `HasForeignKey`.
+- `ProductImage` has no `Id` property by design uses a composite key (`ProductId`, `FileName`) instead.
+
+No custom configuration was needed for entity IDs — EF Core's default convention already treats `string` primary keys as client-generated (unlike `int`/`Guid`, there's no built-in generation strategy for `string`), matching how `Product.Create()`/`Supplier.Create()` already assign IDs before the entity reaches the database.
+
+**Migration:**
+
+```bash
+dotnet ef migrations add InitialCreate \
+  --project Warehouse.Infrastructure \
+  --startup-project Warehouse.Presentation \
+  --context WarehouseDbContext
+
+dotnet ef database update \
+  --project Warehouse.Infrastructure \
+  --startup-project Warehouse.Presentation \
+  --context WarehouseDbContext
+```
+
+#### Repositories now backed by EF Core
+
+`ProductRepository`/`SupplierRepository` (`Warehouse.Infrastructure/Persistence/CodeFirst/`) were updated in place to implement `IProductRepository`/`ISupplierRepository` against `WarehouseDbContext`, replacing the Session 3 in-memory `List<T>` implementations entirely
+
+Key changes from the in-memory version:
+
+- **`UpdateAsync` now does real work.** In-memory, this was a documented no-op (mutating a reference type in a `List<T>` needs no explicit save). Against a real database, it calls `SaveChangesAsync()`. Since `WarehouseDbContext` is scoped per-request, the same context instance tracks an entity across a handler's `GetByIdAsync` → domain-method mutation → `UpdateAsync` sequence — EF's change tracker detects mutations made via private setters through domain methods (e.g. `product.UpdatePrice(...)`) just as it would public ones, so no explicit `.Update()` call is needed.
+- **`GetBySkuAsync` uses `EF.Functions.ILike`**, not `.Equals(..., OrdinalIgnoreCase)` — `StringComparison.OrdinalIgnoreCase` has no SQL translation; `ILike` is Npgsql's case-insensitive match, translating to Postgres's native `ILIKE`.
+- **`GetByIdAsync` eager-loads the `_images` backing field** (`.Include("_images")`) — required specifically for `AddProductImageHandler`, which fetches a product and mutates its image collection; without eager loading, EF wouldn't be tracking that collection and the new image wouldn't persist.
+- **Read-only queries use `.AsNoTracking()`** (`GetAllAsync`, `GetBySkuAsync`) to skip unnecessary change-tracking overhead.
+
+**DI registration changed from `AddSingleton` to `AddScoped`**
+
+```csharp
+builder.Services.AddScoped<IProductRepository, ProductRepository>();
+builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
+```
+
+`AddDbContext` registers `WarehouseDbContext` as **Scoped** by default. A `Singleton` repository depending on a `Scoped` context throws `InvalidOperationException: Cannot consume scoped service ... from singleton` at startup — this is a hard DI lifetime rule, not a style choice.
+
+#### AutoMapper + ViewModels
+
+`ProductDto`/`SupplierDto` were renamed to **`ProductViewModel`/`SupplierViewModel`** (plain mutable classes, not records), mapped from Domain entities via AutoMapper instead of the previous static `FromDomain(...)` factory methods:
+
+```csharp
+public class ProductMappingProfile : Profile
+{
+    public ProductMappingProfile()
+    {
+        CreateMap<Product, ProductViewModel>();
+    }
+}
+```
+
+Every handler returning a ViewModel injects `IMapper` and calls `_mapper.Map<ProductViewModel>(product)`. Handlers with no return value (`ArchiveProductHandler`, `DeactivateSupplierHandler` — both `IRequestHandler<TCommand>` with no generic result type) needed no AutoMapper changes at all, since there's nothing to map for a `204 No Content` response.
+
+> **Note:** AutoMapper is pinned to version `14.0.0` in `Warehouse.Application.csproj`. Versions 15.0.0 and later require a commercial license; 14.0.0 is the last version released under the free MIT license.
