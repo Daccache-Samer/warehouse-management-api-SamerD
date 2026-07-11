@@ -11,7 +11,7 @@ public record SupplierDto(
     bool IsActive)
 {
     public static SupplierDto FromDomain(Supplier supplier) => new(
-        supplier.Id,
+        supplier.SupplierId,
         supplier.Name,
         supplier.Country,
         supplier.ContactEmail,

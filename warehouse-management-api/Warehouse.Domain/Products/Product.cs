@@ -97,7 +97,7 @@ public class Product
         if (!supplier.IsActive)
             throw new DomainException("Inactive suppliers cannot be assigned to products.");
 
-        SupplierId = supplier.Id;
+        SupplierId = supplier.SupplierId;
         LastUpdatedAt = DateTime.UtcNow;
     }
 

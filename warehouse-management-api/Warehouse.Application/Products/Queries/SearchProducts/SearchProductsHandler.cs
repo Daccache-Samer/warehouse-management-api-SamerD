@@ -30,7 +30,7 @@ public class SearchProductsHandler(
             var suppliers = await supplierRepository.GetAllAsync(cancellationToken);
             var matchingSupplierIds = suppliers
                 .Where(s => s.Name.Contains(request.Supplier, StringComparison.OrdinalIgnoreCase))
-                .Select(s => s.Id)
+                .Select(s => s.SupplierId)
                 .ToHashSet();
 
             products = products.Where(p => p.SupplierId is not null && matchingSupplierIds.Contains(p.SupplierId));

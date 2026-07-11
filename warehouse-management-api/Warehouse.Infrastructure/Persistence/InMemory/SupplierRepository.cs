@@ -8,7 +8,7 @@ public class SupplierRepository : ISupplierRepository
 
     public Task<Supplier?> GetByIdAsync(string id, CancellationToken ct = default)
     {
-        var supplier = _suppliers.FirstOrDefault(s => s.Id == id);
+        var supplier = _suppliers.FirstOrDefault(s => s.SupplierId == id);
         return Task.FromResult(supplier);
     }
 
