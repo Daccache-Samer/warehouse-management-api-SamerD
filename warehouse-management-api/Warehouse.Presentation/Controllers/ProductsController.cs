@@ -10,68 +10,62 @@ using Warehouse.Application.Products.Queries.GetProductById;
 using Warehouse.Application.Products.Queries.ListProducts;
 using Warehouse.Application.Products.Queries.SearchProducts;
 using warehouse_management_api.Contracts;
+using Warehouse.Application.Products.ViewModels;
 
 namespace warehouse_management_api.Controllers;
 
 [ApiController]
 [Route("api/products")]
-public class ProductsController : ControllerBase
+public class ProductsController(IMediator mediator) : ControllerBase
 {
-    private readonly IMediator _mediator;
-
-    public ProductsController(IMediator mediator)
-    {
-        _mediator = mediator;
-    }
-
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] bool onlyAvailable = false)
+    public async Task<ActionResult<ProductViewModel>> GetAll([FromQuery] bool onlyAvailable = false)
     {
-        var result = await _mediator.Send(new ListProductsQuery(onlyAvailable));
+        var result = await mediator.Send(new ListProductsQuery(onlyAvailable));
         return Ok(result);
     }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById([FromRoute] string id)
+    public async Task<ActionResult<ProductViewModel>> GetById([FromRoute] string id)
     {
-        var result = await _mediator.Send(new GetProductByIdQuery(id));
+        var result = await mediator.Send(new GetProductByIdQuery(id));
         return result is null ? NotFound($"Product with id '{id}' was not found.") : Ok(result);
     }
 
     [HttpGet("search")]
-    public async Task<IActionResult> Search([FromQuery] string? name, [FromQuery] string? supplier)
+    public async Task<ActionResult<ProductViewModel>> Search([FromQuery] string? name, [FromQuery] string? supplier)
     {
-        var result = await _mediator.Send(new SearchProductsQuery(name, supplier));
+        var result = await mediator.Send(new SearchProductsQuery(name, supplier));
         return Ok(result);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateProductRequest request)
+    public async Task<ActionResult<ProductViewModel>> Create([FromBody] CreateProductRequest request)
     {
         var command = new CreateProductCommand(
             request.Name, request.Sku, request.Description,
             request.Price, request.QuantityInStock, request.ExpiryDate);
 
-        var result = await _mediator.Send(command);
+        var result = await mediator.Send(command);
         return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
     }
 
     [HttpPost("{id}/quantity")]
-    public async Task<IActionResult> UpdateQuantity([FromRoute] string id, [FromBody] UpdateProductQuantityRequest request)
+    public async Task<ActionResult<ProductViewModel>> UpdateQuantity([FromRoute] string id, [FromBody] UpdateProductQuantityRequest request)
     {
-        var result = await _mediator.Send(new UpdateProductQuantityCommand(id, request.QuantityInStock));
+        var result = await mediator.Send(new UpdateProductQuantityCommand(id, request.QuantityInStock));
         return Ok(result);
     }
 
     [HttpPost("{id}/price")]
-    public async Task<IActionResult> UpdatePrice([FromRoute] string id, [FromBody] UpdateProductPriceRequest request)
+    public async Task<ActionResult<ProductViewModel>> UpdatePrice([FromRoute] string id, [FromBody] UpdateProductPriceRequest request)
     {
-        var result = await _mediator.Send(new UpdateProductPriceCommand(id, request.Price));
+        var result = await mediator.Send(new UpdateProductPriceCommand(id, request.Price));
         return Ok(result);
     }
 
     [HttpPost("{id}/image")]
-    public async Task<IActionResult> UploadImage([FromRoute] string id, IFormFile? file)
+    public async Task<ActionResult<ProductViewModel>> UploadImage([FromRoute] string id, IFormFile? file)
     {
         if (file is null || file.Length == 0)
         {
@@ -80,14 +74,14 @@ public class ProductsController : ControllerBase
 
         await using var stream = file.OpenReadStream();
         var command = new AddProductImageCommand(id, stream, file.FileName, file.Length);
-        var result = await _mediator.Send(command);
+        var result = await mediator.Send(command);
         return Ok(result);
     }
 
     [HttpDelete("{id}")]
-    public async Task<IActionResult> Delete([FromRoute] string id)
+    public async Task<ActionResult<ProductViewModel>> Delete([FromRoute] string id)
     {
-        await _mediator.Send(new ArchiveProductCommand(id));
+        await mediator.Send(new ArchiveProductCommand(id));
         return NoContent();
     }
 
@@ -107,9 +101,9 @@ public class ProductsController : ControllerBase
     }
 
     [HttpPost("{id}/assign-supplier/{supplierId}")]
-    public async Task<IActionResult> AssignSupplier([FromRoute] string id, [FromRoute] string supplierId)
+    public async Task<ActionResult<ProductViewModel>> AssignSupplier([FromRoute] string id, [FromRoute] string supplierId)
     {
-        var result = await _mediator.Send(new AssignSupplierToProductCommand(id, supplierId));
+        var result = await mediator.Send(new AssignSupplierToProductCommand(id, supplierId));
         return Ok(result);
     }
 }
