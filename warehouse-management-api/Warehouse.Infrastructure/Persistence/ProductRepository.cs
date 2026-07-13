@@ -12,7 +12,8 @@ public class ProductRepository(WarehouseDbContext context) : IProductRepository
 
     public async Task<Product?> GetBySkuAsync(string sku, CancellationToken ct = default)
     {
-        return await context.Products.AsNoTracking().FirstOrDefaultAsync(p => EF.Functions.ILike(p.SKU, sku), ct);
+        return await context.Products.AsNoTracking().FirstOrDefaultAsync(p =>
+            EF.Functions.ILike(p.SKU, sku), ct);
     }
 
     public async Task<IReadOnlyList<Product>> GetAllAsync(CancellationToken ct = default)
@@ -28,6 +29,7 @@ public class ProductRepository(WarehouseDbContext context) : IProductRepository
 
     public async Task UpdateAsync(Product product, CancellationToken ct = default)
     {
+        context.Update(product);
         await context.SaveChangesAsync(ct);
     }
 }

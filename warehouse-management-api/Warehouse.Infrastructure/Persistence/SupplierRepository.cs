@@ -24,6 +24,7 @@ public class SupplierRepository(WarehouseDbContext context) : ISupplierRepositor
 
     public async Task UpdateAsync(Supplier supplier, CancellationToken ct = default)
     {
+        context.Update(supplier);
         await context.SaveChangesAsync(ct);
     }
 }
