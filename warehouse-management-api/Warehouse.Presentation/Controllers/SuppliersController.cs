@@ -5,6 +5,7 @@ using Warehouse.Application.Suppliers.Commands.DeactivateSupplier;
 using Warehouse.Application.Suppliers.Queries.GetSuppliersById;
 using Warehouse.Application.Suppliers.Queries.ListSuppliers;
 using warehouse_management_api.Contracts;
+using Warehouse.Application.Suppliers.ViewModels;
 
 namespace warehouse_management_api.Controllers;
 
@@ -13,31 +14,31 @@ namespace warehouse_management_api.Controllers;
 public class SuppliersController(IMediator mediator) : ControllerBase
 {
     [HttpGet]
-    public async Task<IActionResult> GetAll()
+    public async Task<ActionResult<SupplierViewModel>> GetAll(CancellationToken cancellationToken = default)
     {
-        var result = await mediator.Send(new ListSuppliersQuery());
+        var result = await mediator.Send(new ListSuppliersQuery(), cancellationToken);
         return Ok(result);
     }
 
     [HttpGet("{id}")]
-    public async Task<IActionResult> GetById([FromRoute] string id)
+    public async Task<ActionResult<SupplierViewModel>> GetById([FromRoute] string id,CancellationToken cancellationToken = default)
     {
-        var result = await mediator.Send(new GetSupplierByIdQuery(id));
+        var result = await mediator.Send(new GetSupplierByIdQuery(id), cancellationToken);
         return result is null ? NotFound($"Supplier with id '{id}' was not found.") : Ok(result);
     }
 
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] CreateSupplierRequest request)
+    public async Task<ActionResult<SupplierViewModel>> Create([FromBody] CreateSupplierRequest request,CancellationToken cancellationToken = default)
     {
         var command = new CreateSupplierCommand(request.Name, request.Country, request.ContactEmail, request.PhoneNumber);
-        var result = await mediator.Send(command);
+        var result = await mediator.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetById), new { id = result.SupplierId }, result);
     }
 
     [HttpDelete("{id}")]
-    public async Task<IActionResult> Deactivate([FromRoute] string id)
+    public async Task<ActionResult<SupplierViewModel>> Deactivate([FromRoute] string id,CancellationToken cancellationToken = default)
     {
-        await mediator.Send(new DeactivateSupplierCommand(id));
+        await mediator.Send(new DeactivateSupplierCommand(id), cancellationToken);
         return NoContent();
     }
 }
