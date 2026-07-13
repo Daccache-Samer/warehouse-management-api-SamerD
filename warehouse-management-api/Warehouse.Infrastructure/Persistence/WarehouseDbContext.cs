@@ -17,6 +17,11 @@ public class WarehouseDbContext(DbContextOptions<WarehouseDbContext> options) : 
                 .WithMany()
                 .HasForeignKey(p => p.SupplierId)
                 .OnDelete(DeleteBehavior.SetNull);
+            
+            entity.HasMany(typeof(ProductImage), "_images")
+                .WithOne()
+                .HasForeignKey("ProductId")
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<ProductImage>(entity =>
