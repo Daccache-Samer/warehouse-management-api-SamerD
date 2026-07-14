@@ -80,6 +80,6 @@ public class ProductRuleTests
 
         product.AssignSupplier(supplier);
 
-        Assert.Equal(supplier.Id, product.SupplierId);
+        Assert.Equal(supplier.SupplierId, product.SupplierId);
     }
 }

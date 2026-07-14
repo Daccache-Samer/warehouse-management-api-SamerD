@@ -1,16 +1,18 @@
-﻿using MediatR;
+﻿using AutoMapper;
+using MediatR;
 using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Application.Products.Commands.AddProductImage;
 
-public class AddProductImageHandler(IProductRepository productRepository, IFileStorage fileStorage)
-    : IRequestHandler<AddProductImageCommand, ProductDto>
+public class AddProductImageHandler(IProductRepository productRepository, IFileStorage fileStorage,IMapper mapper)
+    : IRequestHandler<AddProductImageCommand, ProductViewModel>
 {
     private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png" };
     private const long MaxSizeBytes = 2 * 1024 * 1024; // 2 MB
 
-    public async Task<ProductDto> Handle(AddProductImageCommand request, CancellationToken cancellationToken)
+    public async Task<ProductViewModel> Handle(AddProductImageCommand request, CancellationToken cancellationToken)
     {
         var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
                       ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
@@ -33,6 +35,6 @@ public class AddProductImageHandler(IProductRepository productRepository, IFileS
         product.AddImage(image); // throws DomainException if product archived
 
         await productRepository.UpdateAsync(product, cancellationToken);
-        return ProductDto.FromDomain(product);
+        return mapper.Map<ProductViewModel>(product);
     }
 }

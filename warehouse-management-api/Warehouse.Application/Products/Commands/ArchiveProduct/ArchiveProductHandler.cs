@@ -4,7 +4,8 @@ using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Application.Products.Commands.ArchiveProduct;
 
-public class ArchiveProductHandler(IProductRepository productRepository) : IRequestHandler<ArchiveProductCommand>
+public class ArchiveProductHandler(IProductRepository productRepository) 
+    : IRequestHandler<ArchiveProductCommand>
 {
     public async Task Handle(ArchiveProductCommand request, CancellationToken cancellationToken)
     {
