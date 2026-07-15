@@ -18,6 +18,8 @@ builder.Services.AddAutoMapper(cfg =>
     { }, typeof(Warehouse.Application.Products.ProductMappingProfile).Assembly);
 builder.Services.AddDbContext<WarehouseDbContext>(options =>
     options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddDbContextFactory<WarehouseDbContext>(options =>
+    options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddSwaggerGen(options =>
 {
     options.MapType<IFormFile>(() => new OpenApiSchema

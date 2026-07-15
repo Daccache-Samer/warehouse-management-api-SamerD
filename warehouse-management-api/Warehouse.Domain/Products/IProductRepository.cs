@@ -7,4 +7,7 @@ public interface IProductRepository
     Task<IReadOnlyList<Product>> GetAllAsync(CancellationToken ct = default);
     Task AddAsync(Product product, CancellationToken ct = default);
     Task UpdateAsync(Product product, CancellationToken ct = default);
+    Task<int> CountAsync(CancellationToken ct = default);
+    Task<int> CountLowStockAsync(int lowStockThreshold, CancellationToken ct = default);
+    Task<decimal> GetTotalInventoryValueAsync(CancellationToken ct = default);
 }

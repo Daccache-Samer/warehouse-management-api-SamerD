@@ -6,4 +6,5 @@ public interface ISupplierRepository
     Task<IReadOnlyList<Supplier>> GetAllAsync(CancellationToken ct = default);
     Task AddAsync(Supplier supplier, CancellationToken ct = default);
     Task UpdateAsync(Supplier supplier, CancellationToken ct = default);
+    Task<int> CountActiveSuppliersAsync(CancellationToken ct = default);
 }

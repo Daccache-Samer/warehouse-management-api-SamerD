@@ -3,7 +3,7 @@ using Warehouse.DomainWarehouse.Domain.Suppliers;
 
 namespace Warehouse.Infrastructure.Persistence;
 
-public class SupplierRepository(WarehouseDbContext context) : ISupplierRepository
+public class SupplierRepository(WarehouseDbContext context,IDbContextFactory<WarehouseDbContext> contextFactory) : ISupplierRepository
 {
     public async Task<Supplier?> GetByIdAsync(string id, CancellationToken ct = default)
     {
@@ -26,5 +26,11 @@ public class SupplierRepository(WarehouseDbContext context) : ISupplierRepositor
     {
         context.Update(supplier);
         await context.SaveChangesAsync(ct);
+    }
+
+    public async Task<int> CountActiveSuppliersAsync(CancellationToken ct = default)
+    {
+        await using var dashboardContext = await contextFactory.CreateDbContextAsync(ct);
+        return await dashboardContext.Suppliers.CountAsync(s => s.IsActive, ct);
     }
 }
