@@ -24,7 +24,7 @@ public class SuppliersController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<SupplierViewModel>> GetById([FromRoute] string id,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new GetSupplierByIdQuery(id), cancellationToken);
-        return result is null ? NotFound($"Supplier with id '{id}' was not found.") : Ok(result);
+        return Ok(result);
     }
 
     [HttpPost]

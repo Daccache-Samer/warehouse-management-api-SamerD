@@ -1,6 +1,9 @@
-﻿namespace warehouse_management_api.Contracts;
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace warehouse_management_api.Contracts;
 
 public class UpdateProductPriceRequest
 {
+    [Range(0.01, double.MaxValue, ErrorMessage = "Price must be greater than zero.")]
     public decimal Price { get; set; }
 }
