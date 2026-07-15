@@ -12,7 +12,13 @@ using Warehouse.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration; 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options =>
+    {
+        options.Filters.Add<ActionLoggingFilter>();
+        options.Filters.Add<ModelValidationFilter>();
+    })
+    .AddJsonOptions(options =>
+        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddAutoMapper(cfg =>
     { }, typeof(Warehouse.Application.Products.ProductMappingProfile).Assembly);
@@ -34,12 +40,6 @@ builder.Services.AddMediatR(cfg =>
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
-builder.Services.AddControllers(options =>
-{
-    options.Filters.Add<ActionLoggingFilter>();
-    options.Filters.Add<ModelValidationFilter>();
-});
-
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
