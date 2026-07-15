@@ -22,10 +22,10 @@ builder.Services.AddControllers(options =>
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddAutoMapper(cfg =>
     { }, typeof(Warehouse.Application.Products.ProductMappingProfile).Assembly);
-builder.Services.AddDbContext<WarehouseDbContext>(options =>
-    options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddDbContextFactory<WarehouseDbContext>(options =>
     options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+builder.Services.AddScoped<WarehouseDbContext>(sp =>
+    sp.GetRequiredService<IDbContextFactory<WarehouseDbContext>>().CreateDbContext());
 builder.Services.AddSwaggerGen(options =>
 {
     options.MapType<IFormFile>(() => new OpenApiSchema

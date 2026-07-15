@@ -14,7 +14,7 @@ public class CreateProductHandlerTests
         repository.GetBySkuAsync("SKU-001", Arg.Any<CancellationToken>())
             .Returns((Product?)null); // no existing product with this SKU
 
-        var handler = new CreateProductHandler(repository);
+        var handler = new CreateProductHandler(repository, MapperFactory.Create());
         var command = new CreateProductCommand(
             "Laptop", "SKU-001", "A laptop", 999m, 5, DateTime.UtcNow.AddYears(1));
 
@@ -37,7 +37,7 @@ public class CreateProductHandlerTests
         repository.GetBySkuAsync("SKU-001", Arg.Any<CancellationToken>())
             .Returns(existingProduct);
 
-        var handler = new CreateProductHandler(repository);
+        var handler = new CreateProductHandler(repository, MapperFactory.Create());
         var command = new CreateProductCommand(
             "New Laptop", "SKU-001", "desc", 200m, 5, DateTime.UtcNow);
 
