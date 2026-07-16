@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using warehouse_management_api.Filters;
+using warehouse_management_api.Metadata;
 using Warehouse.Application.Products.Commands.CreateProduct;
 using Warehouse.DomainWarehouse.Domain.Products;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
@@ -33,6 +34,9 @@ builder.Services.AddSwaggerGen(options =>
         Type = JsonSchemaType.String,
         Format = "binary"
     });
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    options.IncludeXmlComments(xmlPath);
 });
 
 builder.Services.AddMediatR(cfg =>
@@ -40,6 +44,7 @@ builder.Services.AddMediatR(cfg =>
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
+builder.Services.AddSingleton<ValidationMetadataProvider>();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.SuppressModelStateInvalidFilter = true;

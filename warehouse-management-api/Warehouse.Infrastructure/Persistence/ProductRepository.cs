@@ -7,7 +7,7 @@ public class ProductRepository(WarehouseDbContext context,IDbContextFactory<Ware
 {
     public async Task<Product?> GetByIdAsync(string id, CancellationToken ct = default)
     {
-        return await context.Products.Include("_images").FirstOrDefaultAsync(p => p.Id == id, ct);
+        return await context.Products.Include(p=>p.Images).FirstOrDefaultAsync(p => p.Id == id, ct);
     }
 
     public async Task<Product?> GetBySkuAsync(string sku, CancellationToken ct = default)
