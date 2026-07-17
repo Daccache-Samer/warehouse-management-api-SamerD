@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using MediatR;
+using Warehouse.Application.Exceptions;
 using Warehouse.Application.Suppliers.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
 
@@ -10,7 +11,8 @@ public class GetSupplierByIdHandler(ISupplierRepository supplierRepository,IMapp
 {
     public async Task<SupplierViewModel?> Handle(GetSupplierByIdQuery request, CancellationToken cancellationToken)
     {
-        var supplier = await supplierRepository.GetByIdAsync(request.SupplierId, cancellationToken);
-        return supplier is null ? null : mapper.Map<SupplierViewModel>(supplier);
+        var supplier = await supplierRepository.GetByIdAsync(request.SupplierId, cancellationToken)
+                       ??  throw new NotFoundException($"Product with ID '{request.SupplierId}' not found.");
+        return mapper.Map<SupplierViewModel>(supplier);
     }
 }

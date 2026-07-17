@@ -27,4 +27,9 @@ public class SupplierRepository(WarehouseDbContext context) : ISupplierRepositor
         context.Update(supplier);
         await context.SaveChangesAsync(ct);
     }
+
+    public async Task<int> CountActiveSuppliersAsync(CancellationToken ct = default)
+    {
+        return await context.Suppliers.CountAsync(s => s.IsActive, ct);
+    }
 }

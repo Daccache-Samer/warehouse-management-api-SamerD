@@ -29,7 +29,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<ProductViewModel>> GetById([FromRoute] string id,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new GetProductByIdQuery(id), cancellationToken);
-        return result is null ? NotFound($"Product with id '{id}' was not found.") : Ok(result);
+        return Ok(result);
     }
 
     [HttpGet("search")]

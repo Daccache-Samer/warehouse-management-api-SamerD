@@ -507,3 +507,26 @@ public class ProductMappingProfile : Profile
 Every handler returning a ViewModel injects `IMapper` and calls `_mapper.Map<ProductViewModel>(product)`. Handlers with no return value (`ArchiveProductHandler`, `DeactivateSupplierHandler` — both `IRequestHandler<TCommand>` with no generic result type) needed no AutoMapper changes at all, since there's nothing to map for a `204 No Content` response.
 
 > **Note:** AutoMapper is pinned to version `14.0.0` in `Warehouse.Application.csproj`. Versions 15.0.0 and later require a commercial license; 14.0.0 is the last version released under the free MIT license.
+
+## Session 05 Lab - Harden Warehouse Management API
+
+### Comparison between filters and middleware:
+Middleware operates on HttpContext, it has no knowledge of MVC concepts, it handles HTTP concerns like: CORS, authentication, authorization, correlation ID tracking. request logging/timing. 
+Filters run within the MVC action execution pipeline, they are fully aware of MVC metadata, action parameters and results and model binding state, they handle controller-specific or action-specific concerns like: result formatting, validation checks and action-level logging. 
+
+### New middleware componenets
+
+1-Id correlation Middleware: It extracts "X-Correlation-ID" from request headers and assigns it to "context.TraceIdentifier", then it appends it to response headers. It also begins a logging scope so all logs related to the same request share the same correlation identifier.
+2-RequestTiming Middleware: It uses a stopwatch to record elapsed time for request execution, then it appends "X-response-Time" to the response header. I also added a log warning if duration surpasses 1000 ms which is an arbitrary number.
+3-ExceptionHandlingMiddleware: It catches any unhandled exceptions globally, maps exception types to HTTP status cods and serializes a structured "ApiResponse" returning error code, massage and trace id while hiding raw stack trace from clients.
+
+### New MVC Filters
+
+1-ModelValidationFilter: It intercepts requests during the "OnactionExecuting" phase and checks if the model of the input is good according to validation, if it is not it returns a "400 Bad request". I disabled the standard MVC model validation so the pipeline uses my custom filter instead.
+2-ActionLoggingFilter: It logs action details on entry and exit.
+
+### New Endpoints
+
+1-POST "/api/stock-adjustements": It record stock changes (increases or decreases) with a clear business reason.
+2-GET "/api/inventory/dashboard": It gives an overview of products, low stock alerts, inventory values and supplier numbers.
+3-GET "/api/metadata/validation/{dtoName}": Exposes metadata.

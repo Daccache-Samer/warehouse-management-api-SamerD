@@ -2,10 +2,11 @@
 using System.Text.Json;
 using Warehouse.Application.Exceptions;
 using Warehouse.DomainWarehouse.Domain.Exceptions;
+using warehouse_management_api.Error_response;
 
 namespace warehouse_management_api.Middleware;
 
-public class ExceptionHandlingMiddleware(RequestDelegate next)
+public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -13,29 +14,37 @@ public class ExceptionHandlingMiddleware(RequestDelegate next)
         {
             await next(context);
         }
-        catch (NotFoundException ex)
+        catch (Exception ex)
         {
-            await WriteProblem(context, HttpStatusCode.NotFound, ex.Message);
-        }
-        catch (ConflictException ex)
-        {
-            await WriteProblem(context, HttpStatusCode.Conflict, ex.Message);
-        }
-        catch (ValidationException ex)
-        {
-            await WriteProblem(context, HttpStatusCode.BadRequest, ex.Message);
-        }
-        catch (DomainException ex)
-        {
-            await WriteProblem(context, HttpStatusCode.BadRequest, ex.Message);
+            await HandleExceptionAsync(context, ex);
         }
     }
 
-    private static Task WriteProblem(HttpContext context, HttpStatusCode statusCode, string message)
+    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
     {
+        var (statusCode, errorCode, clientMessage, logLevel) = exception switch
+        {
+            NotFoundException => (HttpStatusCode.NotFound, ApiErrorCodes.NotFound, exception.Message, LogLevel.Warning),
+            ConflictException => (HttpStatusCode.Conflict, ApiErrorCodes.Conflict, exception.Message, LogLevel.Warning),
+            ValidationException => (HttpStatusCode.BadRequest, ApiErrorCodes.ValidationFailed, exception.Message, LogLevel.Warning),
+            DomainException => (HttpStatusCode.BadRequest, ApiErrorCodes.DomainRuleViolation, exception.Message, LogLevel.Warning),
+            _ => (HttpStatusCode.InternalServerError, ApiErrorCodes.ServerError,
+                "An unexpected error occurred. Please try again later.", LogLevel.Error)
+        };
+        logger.Log(
+            logLevel,
+            exception,
+            "Request {Method} {Path} failed with {ErrorCode} ({StatusCode}) [TraceId: {TraceId}]",
+            context.Request.Method,
+            context.Request.Path,
+            errorCode,
+            (int)statusCode,
+            context.TraceIdentifier);
+
+        var response = new ApiErrorResponse(errorCode, clientMessage, context.TraceIdentifier);
+
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)statusCode;
-        var payload = JsonSerializer.Serialize(new { error = message });
-        return context.Response.WriteAsync(payload);
+        await context.Response.WriteAsync(JsonSerializer.Serialize(response));
     }
 }

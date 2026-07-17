@@ -113,4 +113,15 @@ public class Product
         if (IsArchived)
             throw new DomainException("Archived products cannot be updated.");
     }
+    public void AdjustQuantity(int delta)
+    {
+        EnsureNotArchived();
+
+        var newQuantity = QuantityInStock + delta;
+        if (newQuantity < 0)
+            throw new DomainException("Stock adjustment would result in negative quantity.");
+
+        QuantityInStock = newQuantity;
+        LastUpdatedAt = DateTime.UtcNow;
+    }
 }
