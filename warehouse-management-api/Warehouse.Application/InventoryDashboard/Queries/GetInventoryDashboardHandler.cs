@@ -10,21 +10,34 @@ public class GetInventoryDashboardHandler(IProductRepository productRepository, 
 {
     private const int LowStockThreshold = 10; 
 
-    public async Task<InventoryDashboardViewModel> Handle(GetInventoryDashboardQuery request, CancellationToken cancellationToken)
+    public async Task<InventoryDashboardViewModel> 
+        Handle(GetInventoryDashboardQuery request, CancellationToken cancellationToken)
     {
-        var totalProductsTask = productRepository.CountAsync(cancellationToken);
-        var lowStockTask = productRepository.CountLowStockAsync(LowStockThreshold, cancellationToken);
-        var totalValueTask = productRepository.GetTotalInventoryValueAsync(cancellationToken);
-        var activeSuppliersTask = supplierRepository.CountActiveSuppliersAsync(cancellationToken);
-
-        await Task.WhenAll(totalProductsTask, lowStockTask, totalValueTask, activeSuppliersTask);
+        var totalProducts = await TryGetMetric(() =>
+            productRepository.CountAsync(cancellationToken), "TotalProducts");
+        var lowStock = await TryGetMetric(() =>
+            productRepository.CountLowStockAsync(LowStockThreshold, cancellationToken),"LowStock");
+        var totalValue = await TryGetMetric(() =>
+            productRepository.GetTotalInventoryValueAsync(cancellationToken),"TotalValue");
+        var activeSuppliers = await TryGetMetric(() =>
+            supplierRepository.CountActiveSuppliersAsync(cancellationToken),"ActiveSuppliers");
 
         return new InventoryDashboardViewModel(
-            TotalProductCount: await totalProductsTask,
-            LowStockProductCount: await lowStockTask,
-            LowStockThreshold: LowStockThreshold,
-            TotalInventoryValue: await totalValueTask,
-            ActiveSupplierCount: await activeSuppliersTask,
-            GeneratedAtUtc: DateTime.UtcNow);
+            totalProducts,  lowStock, LowStockThreshold, totalValue, activeSuppliers, DateTime.UtcNow);
     }
+            
+
+        private static async Task<T?> TryGetMetric<T>(Func<Task<T>> query, string metricName)
+            where T : struct
+        {
+            try
+            {
+                return await query();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error querying for " + metricName + ": " + ex.Message);
+                return null;
+            }
+        }
 }
