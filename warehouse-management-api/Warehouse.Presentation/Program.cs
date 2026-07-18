@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using HealthChecks.UI.Client;
 using Serilog;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -71,7 +72,9 @@ builder.Services.AddSingleton<IFileStorage>(sp =>
     return new LocalFileStorage(env.WebRootPath);
 });
 
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks()
+    .AddNpgSql(configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException())
+    .AddRedis(configuration.GetConnectionString("Redis") ?? throw new InvalidOperationException());
 builder.Services.AddHealthChecksUI(opts =>
 {
     opts.AddHealthCheckEndpoint("api", "/health");
@@ -82,8 +85,9 @@ app.UseMiddleware<IdCorrelationMiddleware>();
 app.UseRequestLocalization();
 app.UseMiddleware<RequestTimingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-app.MapHealthChecks("/health", new HealthCheckOptions()
+app.MapHealthChecks("/health", new HealthCheckOptions
 {
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
 });
 app.MapHealthChecksUI(options =>
 {
