@@ -46,4 +46,12 @@ public class ProductRepository(WarehouseDbContext context) : IProductRepository
         return await context.Products.Where(p => !p.IsArchived)
             .SumAsync(p => p.Price * p.QuantityInStock, ct);
     }
+    public async Task<IReadOnlyList<Product>> GetExpiringProductsAsync(int withinDays, CancellationToken ct = default)
+    {
+        var cutoff = DateTime.UtcNow.AddDays(withinDays);
+        return await context.Products
+            .AsNoTracking()
+            .Where(p => !p.IsArchived && p.ExpiryDate <= cutoff)
+            .ToListAsync(ct);
+    }
 }

@@ -1,3 +1,4 @@
+using Hangfire;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using HealthChecks.UI.Client;
 using Serilog;
@@ -11,6 +12,7 @@ using Warehouse.DomainWarehouse.Domain.Products;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
 using Warehouse.Infrastructure.Storage;
 using warehouse_management_api.Middleware;
+using Warehouse.Application.BackgroundJobs;
 using Warehouse.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -79,7 +81,25 @@ builder.Services.AddHealthChecksUI(opts =>
 {
     opts.AddHealthCheckEndpoint("api", "/health");
 }).AddInMemoryStorage();
+
+builder.Services.AddHangfire(config => config
+    .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+    .UseSimpleAssemblyNameTypeSerializer()
+    .UseRecommendedSerializerSettings()
+    .UseInMemoryStorage());
+
+builder.Services.AddHangfireServer();
+builder.Services.AddScoped<ExpiryDateCheckJob>();
+
 var app = builder.Build();
+
+app.UseHangfireDashboard("/hangfire");
+
+var cron = app.Configuration["* * * * *"] ?? Cron.Hourly();
+RecurringJob.AddOrUpdate<ExpiryDateCheckJob>(
+    "expiry-check",
+    job => job.ExecuteAsync(),
+    cron);
 
 app.UseMiddleware<IdCorrelationMiddleware>();
 app.UseRequestLocalization();
