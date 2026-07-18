@@ -5,8 +5,7 @@ using Serilog;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
-using warehouse_management_api.Filters;
-using warehouse_management_api.Metadata;
+using warehouse_management_api.Filters; 
 using Warehouse.Application.Products.Commands.CreateProduct;
 using Warehouse.DomainWarehouse.Domain.Products;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
@@ -63,7 +62,6 @@ builder.Services.AddMediatR(cfg =>
 
 builder.Services.AddScoped<IProductRepository, ProductRepository>();
 builder.Services.AddScoped<ISupplierRepository, SupplierRepository>();
-builder.Services.AddSingleton<ValidationMetadataProvider>();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
