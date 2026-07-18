@@ -5,10 +5,12 @@ using Microsoft.Extensions.Caching.Distributed;
 using Warehouse.Application.Exceptions;
 using Warehouse.Application.Suppliers.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
+using Warehouse.Application.Trackers;
 
 namespace Warehouse.Application.Suppliers.Queries.GetSuppliersById;
 
-public class GetSupplierByIdHandler(ISupplierRepository supplierRepository,IMapper mapper,IDistributedCache cache)
+public class GetSupplierByIdHandler(
+    ISupplierRepository supplierRepository,IMapper mapper,IDistributedCache cache,CacheStatisticsTracker cacheStatisticsTracker)
     : IRequestHandler<GetSupplierByIdQuery, SupplierViewModel?>
 {
     public async Task<SupplierViewModel?> Handle(GetSupplierByIdQuery request, CancellationToken cancellationToken)
@@ -17,6 +19,7 @@ public class GetSupplierByIdHandler(ISupplierRepository supplierRepository,IMapp
         var cached =  await cache.GetStringAsync(cacheKey,cancellationToken);
         if (cached is not null)
         {
+            cacheStatisticsTracker.RecordHit();
             return JsonSerializer.Deserialize<SupplierViewModel>(cached);
         }
         
@@ -30,7 +33,8 @@ public class GetSupplierByIdHandler(ISupplierRepository supplierRepository,IMapp
             JsonSerializer.Serialize(viewModel),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5) },
             cancellationToken);
-
+        
+        cacheStatisticsTracker.RecordMiss(cacheKey);
         return viewModel;
     }
 }

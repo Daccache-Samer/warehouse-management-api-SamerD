@@ -4,10 +4,12 @@ using MediatR;
 using Microsoft.Extensions.Caching.Distributed;
 using Warehouse.Application.Products.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
+using Warehouse.Application.Trackers;
 
 namespace Warehouse.Application.Products.Queries.ListProducts;
 
-public class ListProductsHandler(IProductRepository productRepository, IMapper mapper,IDistributedCache cache)
+public class ListProductsHandler(
+    IProductRepository productRepository, IMapper mapper,IDistributedCache cache,CacheStatisticsTracker cacheStatisticsTracker)
     : IRequestHandler<ListProductsQuery, IReadOnlyList<ProductViewModel>>
 {
     public async Task<IReadOnlyList<ProductViewModel>> Handle(ListProductsQuery request, CancellationToken cancellationToken)
@@ -16,6 +18,7 @@ public class ListProductsHandler(IProductRepository productRepository, IMapper m
         var cached = await cache.GetStringAsync(cacheKey,cancellationToken);
         if (cached is not null)
         {
+            cacheStatisticsTracker.RecordHit();
             return JsonSerializer.Deserialize<List<ProductViewModel>>(cached) ?? throw new InvalidOperationException();
         }
         var products = await productRepository.GetAllAsync(cancellationToken);
@@ -32,7 +35,8 @@ public class ListProductsHandler(IProductRepository productRepository, IMapper m
             JsonSerializer.Serialize(result),
             new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(2) },
             cancellationToken);
-
+        
+        cacheStatisticsTracker.RecordMiss(cacheKey);
         return result;
     }
 }
