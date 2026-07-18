@@ -14,6 +14,7 @@ using Warehouse.Infrastructure.Storage;
 using warehouse_management_api.Middleware;
 using Warehouse.Application.BackgroundJobs;
 using Warehouse.Infrastructure.Persistence;
+using Warehouse.Application.Trackers;
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration; 
@@ -90,6 +91,7 @@ builder.Services.AddHangfire(config => config
 
 builder.Services.AddHangfireServer();
 builder.Services.AddScoped<ExpiryDateCheckJob>();
+builder.Services.AddSingleton<CacheStatisticsTracker>();
 
 var app = builder.Build();
 
