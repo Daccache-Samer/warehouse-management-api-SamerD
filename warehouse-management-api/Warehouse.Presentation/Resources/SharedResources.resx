@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<root>
+    <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+        <xsd:element name="root" msdata:IsDataSet="true">
+            
+        </xsd:element>
+    </xsd:schema>
+    <resheader name="resmimetype">
+        <value>text/microsoft-resx</value>
+    </resheader>
+    <resheader name="version">
+        <value>1.3</value>
+    </resheader>
+    <resheader name="reader">
+        <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    </resheader>
+    <resheader name="writer">
+        <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    </resheader>
+    <data name="ValidationErrorsOccurred" xml:space="preserve"><value>One or more validation errors occurred.</value></data>
+    <data name="UnexpectedError" xml:space="preserve"><value>An unexpected error occurred. Please try again later.</value></data>
+    <data name="NameRequired" xml:space="preserve"><value>Name is required.</value></data>
+    <data name="NameLength" xml:space="preserve"><value>Name must be between 2 and 200 characters.</value></data>
+    <data name="SkuRequired" xml:space="preserve"><value>SKU is required.</value></data>
+    <data name="SkuLength" xml:space="preserve"><value>SKU must be between 2 and 50 characters.</value></data>
+    <data name="DescriptionLength" xml:space="preserve"><value>Description must not exceed 1000 characters.</value></data>
+    <data name="PriceRange" xml:space="preserve"><value>Price must be greater than zero.</value></data>
+    <data name="QuantityRange" xml:space="preserve"><value>Quantity in stock cannot be negative.</value></data>
+    <data name="ExpiryDateFuture" xml:space="preserve"><value>Expiry date must be in the future.</value></data>
+</root>

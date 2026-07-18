@@ -1,12 +1,15 @@
 ﻿using System.Net;
 using System.Text.Json;
+using Microsoft.Extensions.Localization;
 using Warehouse.Application.Exceptions;
 using Warehouse.DomainWarehouse.Domain.Exceptions;
 using warehouse_management_api.Error_response;
+using warehouse_management_api.Resources;
 
 namespace warehouse_management_api.Middleware;
 
-public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger)
+public class ExceptionHandlingMiddleware(
+    RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger, IStringLocalizer<SharedResources> localizer)
 {
     public async Task InvokeAsync(HttpContext context)
     {
@@ -29,7 +32,7 @@ public class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Exception
             ValidationException => (HttpStatusCode.BadRequest, ApiErrorCodes.ValidationFailed, exception.Message, LogLevel.Warning),
             DomainException => (HttpStatusCode.BadRequest, ApiErrorCodes.DomainRuleViolation, exception.Message, LogLevel.Warning),
             _ => (HttpStatusCode.InternalServerError, ApiErrorCodes.ServerError,
-                "An unexpected error occurred. Please try again later.", LogLevel.Error)
+                localizer[SharedResources.UnexpectedError].Value, LogLevel.Error)
         };
         logger.Log(
             logLevel,

@@ -1,4 +1,5 @@
-using MediatR;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Serilog;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
@@ -13,6 +14,11 @@ using Warehouse.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration; 
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .CreateLogger();
+builder.Host.UseSerilog();
 builder.Services.AddControllers(options =>
     {
         options.Filters.Add<ActionLoggingFilter>();
@@ -21,6 +27,11 @@ builder.Services.AddControllers(options =>
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddLocalization();
+string[] supportedCultures = ["en", "fr"];
+builder.Services.Configure<RequestLocalizationOptions>(options => options.SetDefaultCulture(supportedCultures[0])
+    .AddSupportedCultures(supportedCultures)
+    .AddSupportedUICultures(supportedCultures));
 builder.Services.AddAutoMapper(cfg =>
     { }, typeof(Warehouse.Application.Products.ProductMappingProfile).Assembly);
 builder.Services.AddDbContext<WarehouseDbContext>(options =>
@@ -35,6 +46,13 @@ builder.Services.AddSwaggerGen(options =>
     var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     options.IncludeXmlComments(xmlPath);
+});
+
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = 
+        builder.Configuration.GetConnectionString("Redis");
+    options.InstanceName = "MyApp_";
 });
 
 builder.Services.AddMediatR(cfg =>
@@ -53,12 +71,25 @@ builder.Services.AddSingleton<IFileStorage>(sp =>
     return new LocalFileStorage(env.WebRootPath);
 });
 
+builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecksUI(opts =>
+{
+    opts.AddHealthCheckEndpoint("api", "/health");
+}).AddInMemoryStorage();
 var app = builder.Build();
 
 app.UseMiddleware<IdCorrelationMiddleware>();
+app.UseRequestLocalization();
 app.UseMiddleware<RequestTimingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
-
+app.MapHealthChecks("/health", new HealthCheckOptions()
+{
+});
+app.MapHealthChecksUI(options =>
+{
+    options.UIPath = "/health-ui";
+    options.ApiPath = "/health-ui-api";
+});
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
