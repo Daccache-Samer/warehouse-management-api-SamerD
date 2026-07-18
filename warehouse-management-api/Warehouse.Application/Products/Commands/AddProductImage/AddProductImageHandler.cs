@@ -9,7 +9,7 @@ namespace Warehouse.Application.Products.Commands.AddProductImage;
 public class AddProductImageHandler(IProductRepository productRepository, IFileStorage fileStorage,IMapper mapper)
     : IRequestHandler<AddProductImageCommand, ProductViewModel>
 {
-    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png" };
+    private static readonly string[] AllowedExtensions = [".jpg", ".jpeg", ".png"];
     private const long MaxSizeBytes = 2 * 1024 * 1024; // 2 MB
 
     public async Task<ProductViewModel> Handle(AddProductImageCommand request, CancellationToken cancellationToken)

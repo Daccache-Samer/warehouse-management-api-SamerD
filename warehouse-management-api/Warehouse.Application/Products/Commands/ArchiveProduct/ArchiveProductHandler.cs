@@ -1,10 +1,11 @@
 ﻿using MediatR;
+using Microsoft.Extensions.Logging;
 using Warehouse.Application.Exceptions;
 using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Application.Products.Commands.ArchiveProduct;
 
-public class ArchiveProductHandler(IProductRepository productRepository) 
+public class ArchiveProductHandler(IProductRepository productRepository,ILogger<ArchiveProductHandler> logger) 
     : IRequestHandler<ArchiveProductCommand>
 {
     public async Task Handle(ArchiveProductCommand request, CancellationToken cancellationToken)
@@ -15,5 +16,6 @@ public class ArchiveProductHandler(IProductRepository productRepository)
         product.Archive();
 
         await productRepository.UpdateAsync(product, cancellationToken);
+        logger.LogInformation("Product archived: {ProductId} {Sku}", product.Id, product.SKU);
     }
 }

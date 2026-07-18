@@ -1,11 +1,13 @@
 ﻿using MediatR;
+using Microsoft.Extensions.Logging;
 using Warehouse.Application.InventoryDashboard.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
 
 namespace Warehouse.Application.InventoryDashboard.Queries;
 
-public class GetInventoryDashboardHandler(IProductRepository productRepository, ISupplierRepository supplierRepository)
+public class GetInventoryDashboardHandler(
+    IProductRepository productRepository, ISupplierRepository supplierRepository,ILogger<GetInventoryDashboardHandler> logger)
     : IRequestHandler<GetInventoryDashboardQuery, InventoryDashboardViewModel>
 {
     private const int LowStockThreshold = 10; 
@@ -27,7 +29,7 @@ public class GetInventoryDashboardHandler(IProductRepository productRepository, 
     }
             
 
-        private static async Task<T?> TryGetMetric<T>(Func<Task<T>> query, string metricName)
+        private async Task<T?> TryGetMetric<T>(Func<Task<T>> query, string metricName)
             where T : struct
         {
             try
@@ -36,7 +38,7 @@ public class GetInventoryDashboardHandler(IProductRepository productRepository, 
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Error querying for " + metricName + ": " + ex.Message);
+                logger.LogError(ex, "Dashboard metric {Metric} failed to load", metricName);
                 return null;
             }
         }

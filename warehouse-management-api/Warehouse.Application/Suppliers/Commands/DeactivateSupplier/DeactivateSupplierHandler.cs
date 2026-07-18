@@ -1,10 +1,11 @@
 ﻿using MediatR;
+using Microsoft.Extensions.Logging;
 using Warehouse.Application.Exceptions;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
 
 namespace Warehouse.Application.Suppliers.Commands.DeactivateSupplier;
 
-public class DeactivateSupplierHandler(ISupplierRepository supplierRepository)
+public class DeactivateSupplierHandler(ISupplierRepository supplierRepository,ILogger<DeactivateSupplierHandler> logger)
     : IRequestHandler<DeactivateSupplierCommand>
 {
     public async Task Handle(DeactivateSupplierCommand request, CancellationToken cancellationToken)
@@ -15,5 +16,6 @@ public class DeactivateSupplierHandler(ISupplierRepository supplierRepository)
         supplier.Deactivate();
 
         await supplierRepository.UpdateAsync(supplier, cancellationToken);
+        logger.LogInformation("Supplier deactivated: {SupplierId} {Name}", supplier.SupplierId, supplier.Name);
     }
 }
