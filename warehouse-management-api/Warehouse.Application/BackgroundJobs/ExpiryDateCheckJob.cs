@@ -22,5 +22,20 @@ public class ExpiryDateCheckJob(IProductRepository productRepository, ILogger<Ex
 
         if (expiringSoon.Count > 0)
             logger.LogInformation("Expiring soon: {Names}", string.Join(", ", expiringSoon.Select(p => p.Name)));
+        
+        var toArchive = expired.Where(p => p.ExpiryDate < now.AddDays(-7)).ToList();
+        foreach (var product in toArchive)
+        {
+            product.Archive();
+            await productRepository.UpdateAsync(product);
+            logger.LogWarning(
+                "Product auto-archived (expired {DaysAgo} days ago): {ProductName} ({ProductId})",
+                (int)(now - product.ExpiryDate).TotalDays,
+                product.Name,
+                product.Id);
+        }
+        if (toArchive.Count > 0)
+            logger.LogWarning("Auto-archived {Count} product(s) due to expiry.", toArchive.Count);
     }
+    
 }
