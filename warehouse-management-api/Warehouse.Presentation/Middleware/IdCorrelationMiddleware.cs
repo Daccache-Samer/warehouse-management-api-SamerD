@@ -7,7 +7,8 @@ public class IdCorrelationMiddleware(RequestDelegate next, ILogger<IdCorrelation
     public async Task InvokeAsync(HttpContext context)
     {
         var correlationId = context.Request.Headers[CorrelationIdHeaderName];
-        context.TraceIdentifier = correlationId;
+        // ReSharper disable once NullableWarningSuppressionIsUsed
+        context.TraceIdentifier = correlationId! ;
         context.Response.OnStarting(() =>
         {
             context.Response.Headers[CorrelationIdHeaderName] = correlationId;

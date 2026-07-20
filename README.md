@@ -530,3 +530,31 @@ Filters run within the MVC action execution pipeline, they are fully aware of MV
 1-POST "/api/stock-adjustements": It record stock changes (increases or decreases) with a clear business reason.
 2-GET "/api/inventory/dashboard": It gives an overview of products, low stock alerts, inventory values and supplier numbers.
 3-GET "/api/metadata/validation/{dtoName}": Exposes metadata.
+
+## Session 06 Lab - Observability and Performance
+
+### 1. Localization
+- **Request Localization:** Configured the application to support multiple cultures (`en` and `fr`).
+- **Resource Files:** Used `SharedResources.resx` to provide localized error messages and responses.
+- **Swagger Integration:** Enabled changing the request culture directly from the Swagger UI.
+
+### 2. Structured Logging with Serilog
+- **Configuration:** Replaced the default .NET logger with Serilog.
+- **Sinks:** Logs are written to both the Console and rolling log files (`Logs/log-.txt`).
+- **Structured Events:** Logged critical business events (e.g., product creation, stock adjustments, archiving) with structured properties for easier querying.
+- **Slow Request Logging:** (Challenge) Enhanced the `RequestTimingMiddleware` to warn when any API request exceeds a 500ms execution threshold.
+
+### 3. Caching with Redis
+- **Distributed Caching:** Integrated `IDistributedCache` using `StackExchange.Redis` to cache expensive query results (`GetProductById`,`GetSupplierById`, `ListProducts`, `ListSuppliers`).
+- **Cache Invalidation:** Ensured that cache entries are explicitly removed (`RemoveAsync`) whenever a write operation (Create, Update, Adjust Stock, Archive) affects the cached entities.
+- **Cache Statistics:** Implemented a custom `CacheStatisticsTracker` and a `CacheController` to expose hit/miss counts, last refresh times, and currently cached keys on `/api/cache/statistics`.
+
+### 4. Health Checks
+- **Dependency Monitoring:** Added specific health checks for both the PostgreSQL database (`AspNetCore.HealthChecks.Npgsql`) and Redis (`AspNetCore.HealthChecks.Redis`).
+- **Health Checks UI:** Exposed a `/health` endpoint and configured the visual dashboard at `/health-ui` to monitor system status.
+
+### 5. Background Jobs with Hangfire
+- **Recurring Tasks:** Implemented an `ExpiryDateCheckJob` scheduled to run automatically (e.g., hourly).
+- **In-Memory / Postgres Storage:** Hangfire is configured to persist job states and schedules reliably.
+- **Expiry Logic:** The job queries products expiring within 30 days and logs the affected products.
+- **Auto-Archiving:** (Challenge) Enhanced the background job to automatically archive any product that has been expired for more than 7 days, maintaining warehouse data hygiene without manual intervention.

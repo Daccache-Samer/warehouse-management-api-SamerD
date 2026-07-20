@@ -1,15 +1,17 @@
 ﻿using AutoMapper;
 using MediatR;
+using Microsoft.Extensions.Caching.Distributed;
 using Warehouse.Application.Exceptions;
 using Warehouse.Application.Products.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Application.Products.Commands.AddProductImage;
 
-public class AddProductImageHandler(IProductRepository productRepository, IFileStorage fileStorage,IMapper mapper)
+public class AddProductImageHandler(
+    IProductRepository productRepository, IFileStorage fileStorage,IMapper mapper,IDistributedCache cache)
     : IRequestHandler<AddProductImageCommand, ProductViewModel>
 {
-    private static readonly string[] AllowedExtensions = { ".jpg", ".jpeg", ".png" };
+    private static readonly string[] AllowedExtensions = [".jpg", ".jpeg", ".png"];
     private const long MaxSizeBytes = 2 * 1024 * 1024; // 2 MB
 
     public async Task<ProductViewModel> Handle(AddProductImageCommand request, CancellationToken cancellationToken)
@@ -35,6 +37,9 @@ public class AddProductImageHandler(IProductRepository productRepository, IFileS
         product.AddImage(image); // throws DomainException if product archived
 
         await productRepository.UpdateAsync(product, cancellationToken);
+        await cache.RemoveAsync($"GetProductByIdQuery-{product.Id}", cancellationToken);
+        await cache.RemoveAsync("ListProductsHandler_ListProductsQuery", cancellationToken);
+
         return mapper.Map<ProductViewModel>(product);
     }
 }

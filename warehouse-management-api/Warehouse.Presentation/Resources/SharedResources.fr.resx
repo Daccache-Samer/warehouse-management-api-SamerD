@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+
+<root>
+    <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+        <xsd:element name="root" msdata:IsDataSet="true">
+            
+        </xsd:element>
+    </xsd:schema>
+    <resheader name="resmimetype">
+        <value>text/microsoft-resx</value>
+    </resheader>
+    <resheader name="version">
+        <value>1.3</value>
+    </resheader>
+    <resheader name="reader">
+        <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    </resheader>
+    <resheader name="writer">
+        <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+    </resheader>
+    <data name="ValidationErrorsOccurred" xml:space="preserve"><value>Une ou plusieurs erreurs de validation se sont produites.</value></data>
+    <data name="UnexpectedError" xml:space="preserve"><value>Une erreur inattendue s'est produite. Veuillez réessayer plus tard.</value></data>
+    <data name="NameRequired" xml:space="preserve"><value>Le nom est requis.</value></data>
+    <data name="NameLength" xml:space="preserve"><value>Le nom doit contenir entre 2 et 200 caractères.</value></data>
+    <data name="SkuRequired" xml:space="preserve"><value>Le SKU est requis.</value></data>
+    <data name="SkuLength" xml:space="preserve"><value>Le SKU doit contenir entre 2 et 50 caractères.</value></data>
+    <data name="DescriptionLength" xml:space="preserve"><value>La description ne doit pas dépasser 1000 caractères.</value></data>
+    <data name="PriceRange" xml:space="preserve"><value>Le prix doit être supérieur à zéro.</value></data>
+    <data name="QuantityRange" xml:space="preserve"><value>La quantité en stock ne peut pas être négative.</value></data>
+    <data name="ExpiryDateFuture" xml:space="preserve"><value>La date d'expiration doit être dans le futur.</value></data>
+</root>

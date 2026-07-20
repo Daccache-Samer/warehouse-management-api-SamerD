@@ -26,7 +26,8 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("{id}")]
-    public async Task<ActionResult<ProductViewModel>> GetById([FromRoute] string id,CancellationToken cancellationToken = default)
+    public async Task<ActionResult<ProductViewModel>> GetById(
+        [FromRoute] string id,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new GetProductByIdQuery(id), cancellationToken);
         return Ok(result);
@@ -40,7 +41,8 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<ProductViewModel>> Create([FromBody] CreateProductRequest request,CancellationToken cancellationToken = default)
+    public async Task<ActionResult<ProductViewModel>> Create(
+        [FromBody] CreateProductRequest request,[FromQuery] string? culture,CancellationToken cancellationToken = default)
     {
         var command = new CreateProductCommand(
             request.Name, request.Sku, request.Description,

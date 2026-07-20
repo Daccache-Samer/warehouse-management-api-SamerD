@@ -8,4 +8,6 @@ public interface IProductRepository : IRepository<Product>
     Task<int> CountAsync(CancellationToken ct = default);
     Task<int> CountLowStockAsync(int lowStockThreshold, CancellationToken ct = default);
     Task<decimal> GetTotalInventoryValueAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<Product>> GetExpiringProductsAsync(int withinDays, CancellationToken ct = default);
+
 }
