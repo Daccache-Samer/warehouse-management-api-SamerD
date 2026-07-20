@@ -5,15 +5,15 @@ namespace Warehouse.Application.BackgroundJobs;
 
 public class ExpiryDateCheckJob(IProductRepository productRepository, ILogger<ExpiryDateCheckJob> logger)
 {
-    public async Task ExecuteAsync()
+    public async Task ExecuteAsync(CancellationToken cancellationToken)
     {
-        var products = await productRepository.GetExpiringProductsAsync(withinDays: 30);
+        var products = await productRepository.GetExpiringProductsAsync(withinDays: 30, ct: cancellationToken);
 
         var now = DateTime.UtcNow;
         var expired = products.Where(p => p.ExpiryDate < now).ToList();
         var expiringSoon = products.Where(p => p.ExpiryDate >= now).ToList();
 
-        logger.LogWarning(
+        logger.LogInformation(
             "Expiry check: {ExpiredCount} expired product(s), {SoonCount} expiring within 30 days.",
             expired.Count, expiringSoon.Count);
 
@@ -27,7 +27,7 @@ public class ExpiryDateCheckJob(IProductRepository productRepository, ILogger<Ex
         foreach (var product in toArchive)
         {
             product.Archive();
-            await productRepository.UpdateAsync(product);
+            await productRepository.UpdateAsync(product, cancellationToken);
             logger.LogWarning(
                 "Product auto-archived (expired {DaysAgo} days ago): {ProductName} ({ProductId})",
                 (int)(now - product.ExpiryDate).TotalDays,

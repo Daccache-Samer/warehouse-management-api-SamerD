@@ -98,7 +98,7 @@ app.UseHangfireDashboard("/hangfire");
 var cron = app.Configuration["* * * * *"] ?? Cron.Hourly();
 RecurringJob.AddOrUpdate<ExpiryDateCheckJob>(
     "expiry-check",
-    job => job.ExecuteAsync(),
+    job => job.ExecuteAsync(CancellationToken.None),
     cron);
 
 app.UseMiddleware<IdCorrelationMiddleware>();
