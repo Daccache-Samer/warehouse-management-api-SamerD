@@ -27,7 +27,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
 
     [HttpGet("{id}")]
     public async Task<ActionResult<ProductViewModel>> GetById(
-        [FromRoute] string id,[FromQuery] string? culture,CancellationToken cancellationToken = default)
+        [FromRoute] string id,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new GetProductByIdQuery(id), cancellationToken);
         return Ok(result);
