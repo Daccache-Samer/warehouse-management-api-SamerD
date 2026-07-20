@@ -15,7 +15,7 @@ public class GetSupplierByIdHandler(
 {
     public async Task<SupplierViewModel?> Handle(GetSupplierByIdQuery request, CancellationToken cancellationToken)
     {
-        var cacheKey = $"{nameof(GetSupplierByIdQuery)}-{request.SupplierId}";
+        var cacheKey = SupplierCacheKeys.ById(request.SupplierId);
         var cached =  await cache.GetStringAsync(cacheKey,cancellationToken);
         if (cached is not null)
         {

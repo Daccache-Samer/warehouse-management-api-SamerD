@@ -14,7 +14,7 @@ public class ListProductsHandler(
 {
     public async Task<IReadOnlyList<ProductViewModel>> Handle(ListProductsQuery request, CancellationToken cancellationToken)
     {
-        const string cacheKey = $"{nameof(ListProductsHandler)}_{nameof(ListProductsQuery)}";
+        var cacheKey = ProductCacheKeys.List(request.OnlyAvailable);
         var cached = await cache.GetStringAsync(cacheKey,cancellationToken);
         if (cached is not null)
         {

@@ -15,7 +15,7 @@ public class GetProductByIdHandler(
 {
     public async Task<ProductViewModel?> Handle(GetProductByIdQuery request, CancellationToken cancellationToken)
     {
-        var cacheKey = $"{nameof(GetProductByIdQuery)}-{request.ProductId}";
+        var cacheKey = ProductCacheKeys.ById(request.ProductId);
         var cached = await distributedCache.GetStringAsync(cacheKey, cancellationToken);
         if (cached is not null)
         {

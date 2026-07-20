@@ -14,7 +14,7 @@ public class ListSuppliersHandler(
 {
     public async Task<IReadOnlyList<SupplierViewModel>> Handle(ListSuppliersQuery request, CancellationToken cancellationToken)
     {
-        const string cacheKey = $"{nameof(ListSuppliersHandler)}_{nameof(ListSuppliersQuery)}";
+        const string cacheKey = SupplierCacheKeys.List;
         var  cached = await cache.GetStringAsync(cacheKey,cancellationToken);
         if (cached is not null)
         {
