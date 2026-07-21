@@ -1,19 +1,34 @@
+using System.Net;
+using System.Reflection;
+using System.Text.Json.Serialization;
+using Firebase.Auth;
+using Firebase.Auth.Providers;
+using FirebaseAdmin;
 using Hangfire;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using HealthChecks.UI.Client;
-using Serilog;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
-using warehouse_management_api.Filters; 
-using Warehouse.Application.Products.Commands.CreateProduct;
-using Warehouse.DomainWarehouse.Domain.Products;
-using Warehouse.DomainWarehouse.Domain.Suppliers;
-using Warehouse.Infrastructure.Storage;
+using Serilog;
+using warehouse_management_api.Filters;
 using warehouse_management_api.Middleware;
 using Warehouse.Application.BackgroundJobs;
-using Warehouse.Infrastructure.Persistence;
+using Warehouse.Application.Products;
+using Warehouse.Application.Products.Commands.CreateProduct;
 using Warehouse.Application.Trackers;
+using Warehouse.DomainWarehouse.Domain.Products;
+using Warehouse.DomainWarehouse.Domain.Suppliers;
+using Warehouse.Infrastructure.Firebase;
+using Warehouse.Infrastructure.Persistence;
+using Warehouse.Infrastructure.Storage;
+using dotenv.net;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.Cookies;
+
+DotEnv.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration; 
@@ -28,15 +43,15 @@ builder.Services.AddControllers(options =>
         options.Filters.Add<ModelValidationFilter>();
     })
     .AddJsonOptions(options =>
-        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddLocalization();
 string[] supportedCultures = ["en", "fr"];
 builder.Services.Configure<RequestLocalizationOptions>(options => options.SetDefaultCulture(supportedCultures[0])
     .AddSupportedCultures(supportedCultures)
     .AddSupportedUICultures(supportedCultures));
-builder.Services.AddAutoMapper(cfg =>
-    { }, typeof(Warehouse.Application.Products.ProductMappingProfile).Assembly);
+builder.Services.AddAutoMapper(_ =>
+    { }, typeof(ProductMappingProfile).Assembly);
 builder.Services.AddDbContext<WarehouseDbContext>(options =>
     options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddSwaggerGen(options =>
@@ -46,7 +61,7 @@ builder.Services.AddSwaggerGen(options =>
         Type = JsonSchemaType.String,
         Format = "binary"
     });
-    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     options.IncludeXmlComments(xmlPath);
 });
@@ -91,20 +106,80 @@ builder.Services.AddHangfireServer();
 builder.Services.AddScoped<ExpiryDateCheckJob>();
 builder.Services.AddSingleton<CacheStatisticsTracker>();
 
+Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", @"warehouse-management-api-12faf-firebase-adminsdk-fbsvc-0c8a5b4099.json");
+builder.Services.AddSingleton(FirebaseApp.Create());
+builder.Services.AddRazorPages(options =>
+{
+    options.Conventions.AuthorizePage("/Authenticated");
+});
+var firebaseProjectName = Environment.GetEnvironmentVariable("PROJECT_ID");
+var apiKey = Environment.GetEnvironmentVariable("API_KEY");
+var authDomain = Environment.GetEnvironmentVariable("AUTHDOMAIN");
+builder.Services.AddSingleton(new FirebaseAuthClient(new FirebaseAuthConfig
+{
+    ApiKey =apiKey,
+    AuthDomain = authDomain,
+    Providers =
+    [
+        new EmailProvider(),
+        new GoogleProvider()
+    ]
+}));
+builder.Services.AddRazorPages();
+builder.Services.AddSingleton<IFirebaseAuthService, FirebaseAuthService>(); 
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
+    })
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Unauthenticated"; 
+        options.AccessDeniedPath = "/Unauthenticated";
+    })
+    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+    {
+        options.Authority = $"https://google.com{firebaseProjectName}";
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = $"https://google.com{firebaseProjectName}",
+            ValidateAudience = true,
+            ValidAudience = firebaseProjectName,
+            ValidateLifetime = true
+        };
+    });
+
+builder.Services.AddSession();
+
 var app = builder.Build();
-
-app.UseHangfireDashboard("/hangfire");
-
-var cron = app.Configuration["* * * * *"] ?? Cron.Hourly();
-RecurringJob.AddOrUpdate<ExpiryDateCheckJob>(
-    "expiry-check",
-    job => job.ExecuteAsync(CancellationToken.None),
-    cron);
 
 app.UseMiddleware<IdCorrelationMiddleware>();
 app.UseRequestLocalization();
 app.UseMiddleware<RequestTimingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseStaticFiles();
+app.UseSession();
+app.UseRouting();
+
+app.Use(async (context, next) =>
+{
+    var token = context.Session.GetString("token");
+    
+    if (!string.IsNullOrEmpty(token) && context.User.Identity?.IsAuthenticated != true)
+    {
+        var claims = new List<Claim> { new Claim(ClaimTypes.Authentication, token) };
+        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
+        
+        context.User = new ClaimsPrincipal(identity);
+    }
+    
+    await next();
+});
+
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
@@ -114,12 +189,21 @@ app.MapHealthChecksUI(options =>
     options.UIPath = "/health-ui";
     options.ApiPath = "/health-ui-api";
 });
+
+app.UseHangfireDashboard();
+
+var cron = app.Configuration["* * * * *"] ?? Cron.Hourly();
+RecurringJob.AddOrUpdate<ExpiryDateCheckJob>(
+    "expiry-check",
+    job => job.ExecuteAsync(CancellationToken.None),
+    cron);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-
+app.MapRazorPages(); 
 app.MapControllers();
 
 app.Run();

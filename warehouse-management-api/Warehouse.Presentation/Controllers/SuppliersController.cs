@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Warehouse.Application.Suppliers.Commands.CreateSupplier;
 using Warehouse.Application.Suppliers.Commands.DeactivateSupplier;
@@ -28,6 +29,7 @@ public class SuppliersController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize]
     public async Task<ActionResult<SupplierViewModel>> Create([FromBody] CreateSupplierRequest request,CancellationToken cancellationToken = default)
     {
         var command = new CreateSupplierCommand(request.Name, request.Country, request.ContactEmail, request.PhoneNumber);
@@ -36,6 +38,7 @@ public class SuppliersController(IMediator mediator) : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize]
     public async Task<ActionResult<SupplierViewModel>> Deactivate([FromRoute] string id,CancellationToken cancellationToken = default)
     {
         await mediator.Send(new DeactivateSupplierCommand(id), cancellationToken);

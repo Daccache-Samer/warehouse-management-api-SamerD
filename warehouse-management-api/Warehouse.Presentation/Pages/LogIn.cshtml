@@ -1,0 +1,28 @@
+﻿@page
+@model Warehouse.Infrastructure.Firebase.LoginModel
+@{
+    ViewData["Title"] = "Login";
+}
+
+<h2>Login</h2>
+
+<div class="row">
+    <div class="col-md-4">
+        <form method="post">
+            @Html.AntiForgeryToken()
+            <div class="form-group mb-2">
+                <label asp-for="UserDto.Email" class="control-label"></label>
+                <input asp-for="UserDto.Email" class="form-control" type="email" required/>
+                <span asp-validation-for="UserDto.Email" class="text-danger"></span>
+            </div>
+            <div class="form-group mb-2">
+                <label asp-for="UserDto.Password" class="control-label"></label>
+                <input asp-for="UserDto.Password" class="form-control" type="password" required/>
+                <span asp-validation-for="UserDto.Password" class="text-danger"></span>
+            </div>
+            <div class="form-group">
+                <input type="submit" value="Login" class="btn btn-primary"/>
+            </div>
+        </form>
+    </div>
+</div>

@@ -1,10 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Warehouse.Application.Trackers;
 
 namespace warehouse_management_api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class CacheController(CacheStatisticsTracker cacheTracker) : ControllerBase
 {
     [HttpGet("statistics")]

@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Warehouse.Application.Products.Commands.AddProductImage;
 using Warehouse.Application.Products.Commands.ArchiveProduct;
@@ -41,6 +42,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize]
     public async Task<ActionResult<ProductViewModel>> Create(
         [FromBody] CreateProductRequest request,[FromQuery] string? culture,CancellationToken cancellationToken = default)
     {
@@ -53,6 +55,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/quantity")]
+    [Authorize]
     public async Task<ActionResult<ProductViewModel>> UpdateQuantity([FromRoute] string id, [FromBody] UpdateProductQuantityRequest request,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new UpdateProductQuantityCommand(id, request.QuantityInStock), cancellationToken);
@@ -60,6 +63,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/price")]
+    [Authorize]
     public async Task<ActionResult<ProductViewModel>> UpdatePrice([FromRoute] string id, [FromBody] UpdateProductPriceRequest request,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new UpdateProductPriceCommand(id, request.Price), cancellationToken);
@@ -67,6 +71,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/image")]
+    [Authorize]
     public async Task<ActionResult<ProductViewModel>> UploadImage([FromRoute] string id, IFormFile? file,CancellationToken cancellationToken = default)
     {
         if (file is null || file.Length == 0)
@@ -81,6 +86,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize]
     public async Task<ActionResult<ProductViewModel>> Delete([FromRoute] string id,CancellationToken cancellationToken = default)
     {
         await mediator.Send(new ArchiveProductCommand(id), cancellationToken);
@@ -92,7 +98,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     {
         var culture = (acceptLanguage ?? "en-US").Split(',')[0].Trim();
 
-        string formatted = culture switch
+        var formatted = culture switch
         {
             "fr-FR" => DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss", new System.Globalization.CultureInfo("fr-FR")),
             "ar-LB" => DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss", new System.Globalization.CultureInfo("ar-LB")),
@@ -103,6 +109,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/assign-supplier/{supplierId}")]
+    [Authorize]
     public async Task<ActionResult<ProductViewModel>> AssignSupplier([FromRoute] string id, [FromRoute] string supplierId,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new AssignSupplierToProductCommand(id, supplierId), cancellationToken);
