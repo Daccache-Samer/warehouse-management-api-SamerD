@@ -572,7 +572,8 @@ Filters run within the MVC action execution pipeline, they are fully aware of MV
 - **Two policies**:
   - `ApiUser` — any authenticated user (`RequireAuthenticatedUser`).Applied on all read endpints.
   - `AdminOnly` — requires the `admin` role (`RequireRole("admin")`).Applied on all create/delete endpoints.
--- **Swagger Authorize button** — I added a Bearer security definition to `AddSwaggerGen` so a raw Firebase ID token can be pasted into Swagger UI once per session and reused on every subsequent request. You have to use the following command in postman to get the token: https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<API_KEY> , accompanied by the following body: 
+-- **Swagger Authorize button** — I added a Bearer security definition to `AddSwaggerGen` so a raw Firebase ID token can be pasted into Swagger UI once per session and reused on every subsequent request. You have to use the following command in postman to get the token: https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<API_KEY> 
+accompanied by the following body: 
 {
      "email": "admin@warehouse.com",
      "password": "123456789",
