@@ -558,3 +558,51 @@ Filters run within the MVC action execution pipeline, they are fully aware of MV
 - **In-Memory / Postgres Storage:** Hangfire is configured to persist job states and schedules reliably.
 - **Expiry Logic:** The job queries products expiring within 30 days and logs the affected products.
 - **Auto-Archiving:** (Challenge) Enhanced the background job to automatically archive any product that has been expired for more than 7 days, maintaining warehouse data hygiene without manual intervention.
+
+## Session 07 Lab - Firebase Auth and MinIO
+
+### 1. Authentication
+
+- **JWT Bearer validation**: `AddJwtBearer` validates ID tokens against Firebase's issuer (`https://securetoken.google.com/{ProjectId}`) and audience (the Firebase Project ID), with `ValidateLifetime` enforced.
+
+- **Razor Pages login flow** — I created 5 pages to test authentication. /SignUp lets you create a new user. /login lets you log into an already created user and then sends you to /authenticated. /logout lets you log out of a user. If you try to access /authenticated before logging into a valid account you are redirected to /unauthenticated. 
+
+### 2. Authorization
+
+- **Two policies**:
+  - `ApiUser` — any authenticated user (`RequireAuthenticatedUser`).Applied on all read endpints.
+  - `AdminOnly` — requires the `admin` role (`RequireRole("admin")`).Applied on all create/delete endpoints.
+-- **Swagger Authorize button** — I added a Bearer security definition to `AddSwaggerGen` so a raw Firebase ID token can be pasted into Swagger UI once per session and reused on every subsequent request. You have to use the following command in postman to get the token: https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<API_KEY> , accompanied by the following body: 
+{
+     "email": "admin@warehouse.com",
+     "password": "123456789",
+     "returnSecureToken": true
+   }
+
+### 3. Object Storage with MinIO
+- **`MinioFileStorage`** replaces `LocalFileStorage` as the registered `IFileStorage` implementation — both product images and the new supplier documents are stored in the same MinIO bucket (`warehouse-assets`), under `products/{id}/...` and `supplier-documents/{id}/...` respectively.
+
+### Running MinIO
+
+```bash
+docker compose up minio -d
+```
+Console UI: `http://localhost:9001`.
+### 4. .envexample:
+API_KEY=<secret>
+PROJECT_ID=warehouse-management-api-12faf
+AUTHDOMAIN=<secret>
+MINIO_ENDPOINT=localhost:9000
+MINIO_ACCESS_KEY=admin
+MINIO_SECRET_KEY=<secret>
+MINIO_BUCKET=warehouse-assets
+MINIO_USE_SSL=false
+MINIO_ROOT_USER=admin
+MINIO_ROOT_PASSWORD=<same as MINIO_SECRET_KEY>
+
+### Endpoints added:
+
+GET`/api/products/{id}/images/{fileName}/download`: ApiUser access. Download an image from minio.
+POST`/api/suppliers/{id}/documents`: AdminOnly access. Add a supplier document to minio.
+GET`/api/suppliers/{id}/documents/{documentId}`: ApiUser access. Download a supplier document from minio.
+ DELETE`/api/suppliers/{id}/documents/{documentId}`: AAdminOnly. Delete a supplier document from minio.
