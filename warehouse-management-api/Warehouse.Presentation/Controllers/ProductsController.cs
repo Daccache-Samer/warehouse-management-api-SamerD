@@ -11,6 +11,7 @@ using Warehouse.Application.Products.Queries.GetProductById;
 using Warehouse.Application.Products.Queries.ListProducts;
 using Warehouse.Application.Products.Queries.SearchProducts;
 using warehouse_management_api.Contracts;
+using Warehouse.Application.Products.Queries.DownloadProductImage;
 using Warehouse.Application.Products.ViewModels;
 
 namespace warehouse_management_api.Controllers;
@@ -81,9 +82,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
         {
             return BadRequest("No file was uploaded.");
         }
-
-        await using var stream = file.OpenReadStream();
-        var command = new AddProductImageCommand(id, stream, file.FileName, file.Length);
+        var command = new AddProductImageCommand(id, file.OpenReadStream(), file.FileName, file.Length,file.ContentType);
         var result = await mediator.Send(command, cancellationToken);
         return Ok(result);
     }
@@ -118,5 +117,12 @@ public class ProductsController(IMediator mediator) : ControllerBase
     {
         var result = await mediator.Send(new AssignSupplierToProductCommand(id, supplierId), cancellationToken);
         return Ok(result);
+    }
+    [HttpGet("{id}/images/{fileName}/download")]
+    [Authorize(Policy = "ApiUser")]
+    public async Task<IActionResult> DownloadImage([FromRoute] string id, [FromRoute] string fileName, CancellationToken cancellationToken = default)
+    {
+        var result = await mediator.Send(new DownloadProductImageQuery(id, fileName), cancellationToken);
+        return File(result.Content, result.ContentType, result.FileName);
     }
 }
