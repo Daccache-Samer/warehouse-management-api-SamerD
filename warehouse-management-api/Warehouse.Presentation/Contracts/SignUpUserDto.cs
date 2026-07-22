@@ -1,6 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 
-namespace Warehouse.Infrastructure.Firebase;
+namespace warehouse_management_api.Contracts;
 
 public class SignUpUserDto
 {

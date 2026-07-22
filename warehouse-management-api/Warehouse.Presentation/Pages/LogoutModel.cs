@@ -1,7 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace Warehouse.Infrastructure.Firebase;
+namespace warehouse_management_api.Pages;
 
 public class LogoutModel : PageModel
 {

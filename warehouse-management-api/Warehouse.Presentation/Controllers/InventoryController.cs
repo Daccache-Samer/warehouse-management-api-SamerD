@@ -8,10 +8,10 @@ namespace warehouse_management_api.Controllers;
 
 [ApiController]
 [Route("api/inventory")]
-[Authorize]
 public class InventoryController(IMediator mediator) : ControllerBase
 {
     [HttpGet("dashboard")]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<InventoryDashboardViewModel>> GetDashboard(CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new GetInventoryDashboardQuery(), cancellationToken);

@@ -6,10 +6,10 @@ namespace warehouse_management_api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
 public class CacheController(CacheStatisticsTracker cacheTracker) : ControllerBase
 {
     [HttpGet("statistics")]
+    [Authorize(Policy = "AdminOnly")]
     public IActionResult GetStatistics()
     {
         var stats = new

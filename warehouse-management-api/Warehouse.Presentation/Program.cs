@@ -1,5 +1,5 @@
-using System.Net;
 using System.Reflection;
+using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Firebase.Auth;
 using Firebase.Auth.Providers;
@@ -25,8 +25,7 @@ using Warehouse.Infrastructure.Firebase;
 using Warehouse.Infrastructure.Persistence;
 using Warehouse.Infrastructure.Storage;
 using dotenv.net;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 
 DotEnv.Load();
 
@@ -61,11 +60,26 @@ builder.Services.AddSwaggerGen(options =>
         Type = JsonSchemaType.String,
         Format = "binary"
     });
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Paste the raw Firebase ID token (no 'Bearer ' prefix needed)"
+    });
+
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+    });
+
     var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     options.IncludeXmlComments(xmlPath);
 });
-
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = 
@@ -108,6 +122,7 @@ builder.Services.AddSingleton<CacheStatisticsTracker>();
 
 Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", @"warehouse-management-api-12faf-firebase-adminsdk-fbsvc-0c8a5b4099.json");
 builder.Services.AddSingleton(FirebaseApp.Create());
+builder.Services.AddSingleton<IFirebaseUserService, FirebaseUserService>();
 builder.Services.AddRazorPages(options =>
 {
     options.Conventions.AuthorizePage("/Authenticated");
@@ -125,8 +140,8 @@ builder.Services.AddSingleton(new FirebaseAuthClient(new FirebaseAuthConfig
         new GoogleProvider()
     ]
 }));
-builder.Services.AddRazorPages();
 builder.Services.AddSingleton<IFirebaseAuthService, FirebaseAuthService>(); 
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ApiAuthorizationResultHandler>();
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
@@ -139,16 +154,26 @@ builder.Services.AddAuthentication(options =>
     })
     .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
     {
-        options.Authority = $"https://google.com{firebaseProjectName}";
+        options.MapInboundClaims = false;
+        options.Authority = $"https://securetoken.google.com/{firebaseProjectName}";
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,
-            ValidIssuer = $"https://google.com{firebaseProjectName}",
+            ValidIssuer = $"https://securetoken.google.com/{firebaseProjectName}",
             ValidateAudience = true,
             ValidAudience = firebaseProjectName,
-            ValidateLifetime = true
+            ValidateLifetime = true,
+            RoleClaimType = "role" 
         };
     });
+
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("ApiUser", policy => policy
+        .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser())
+    .AddPolicy("AdminOnly", policy => policy
+        .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+        .RequireRole("admin"));
 
 builder.Services.AddSession();
 
@@ -161,21 +186,6 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseStaticFiles();
 app.UseSession();
 app.UseRouting();
-
-app.Use(async (context, next) =>
-{
-    var token = context.Session.GetString("token");
-    
-    if (!string.IsNullOrEmpty(token) && context.User.Identity?.IsAuthenticated != true)
-    {
-        var claims = new List<Claim> { new Claim(ClaimTypes.Authentication, token) };
-        var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
-        
-        context.User = new ClaimsPrincipal(identity);
-    }
-    
-    await next();
-});
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -203,6 +213,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
 app.MapRazorPages(); 
 app.MapControllers();
 

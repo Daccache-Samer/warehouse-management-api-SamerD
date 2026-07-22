@@ -12,7 +12,7 @@ namespace warehouse_management_api.Controllers;
 public class StockAdjustmentsController(IMediator mediator) : ControllerBase
 {
     [HttpPost]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> Create(
         [FromBody] AdjustProductStockRequest request,
         CancellationToken cancellationToken = default)

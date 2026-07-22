@@ -20,6 +20,7 @@ namespace warehouse_management_api.Controllers;
 public class ProductsController(IMediator mediator) : ControllerBase
 {
     [HttpGet]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<ProductViewModel>> GetAll([FromQuery] bool onlyAvailable = false,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new ListProductsQuery(onlyAvailable), cancellationToken);
@@ -27,6 +28,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("{id}")]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<ProductViewModel>> GetById(
         [FromRoute] string id,CancellationToken cancellationToken = default)
     {
@@ -35,6 +37,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("search")]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<ProductViewModel>> Search([FromQuery] string? name, [FromQuery] string? supplier,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new SearchProductsQuery(name, supplier), cancellationToken);
@@ -42,7 +45,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> Create(
         [FromBody] CreateProductRequest request,[FromQuery] string? culture,CancellationToken cancellationToken = default)
     {
@@ -55,7 +58,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/quantity")]
-    [Authorize]
+    [Authorize(Policy="AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> UpdateQuantity([FromRoute] string id, [FromBody] UpdateProductQuantityRequest request,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new UpdateProductQuantityCommand(id, request.QuantityInStock), cancellationToken);
@@ -63,7 +66,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/price")]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> UpdatePrice([FromRoute] string id, [FromBody] UpdateProductPriceRequest request,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new UpdateProductPriceCommand(id, request.Price), cancellationToken);
@@ -71,7 +74,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/image")]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> UploadImage([FromRoute] string id, IFormFile? file,CancellationToken cancellationToken = default)
     {
         if (file is null || file.Length == 0)
@@ -86,7 +89,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> Delete([FromRoute] string id,CancellationToken cancellationToken = default)
     {
         await mediator.Send(new ArchiveProductCommand(id), cancellationToken);
@@ -94,6 +97,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("server-time")]
+    [Authorize(Policy = "ApiUser")]
     public IActionResult GetServerTime([FromHeader(Name = "Accept-Language")] string? acceptLanguage)
     {
         var culture = (acceptLanguage ?? "en-US").Split(',')[0].Trim();
@@ -109,7 +113,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/assign-supplier/{supplierId}")]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> AssignSupplier([FromRoute] string id, [FromRoute] string supplierId,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new AssignSupplierToProductCommand(id, supplierId), cancellationToken);

@@ -15,6 +15,7 @@ namespace warehouse_management_api.Controllers;
 public class SuppliersController(IMediator mediator) : ControllerBase
 {
     [HttpGet]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<SupplierViewModel>> GetAll(CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new ListSuppliersQuery(), cancellationToken);
@@ -22,6 +23,7 @@ public class SuppliersController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("{id}")]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<SupplierViewModel>> GetById([FromRoute] string id,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new GetSupplierByIdQuery(id), cancellationToken);
@@ -29,7 +31,7 @@ public class SuppliersController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<SupplierViewModel>> Create([FromBody] CreateSupplierRequest request,CancellationToken cancellationToken = default)
     {
         var command = new CreateSupplierCommand(request.Name, request.Country, request.ContactEmail, request.PhoneNumber);
@@ -38,7 +40,7 @@ public class SuppliersController(IMediator mediator) : ControllerBase
     }
 
     [HttpDelete("{id}")]
-    [Authorize]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<SupplierViewModel>> Deactivate([FromRoute] string id,CancellationToken cancellationToken = default)
     {
         await mediator.Send(new DeactivateSupplierCommand(id), cancellationToken);
