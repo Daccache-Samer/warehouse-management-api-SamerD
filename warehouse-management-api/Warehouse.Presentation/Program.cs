@@ -1,5 +1,4 @@
 using System.Reflection;
-using System.Security.Claims;
 using System.Text.Json.Serialization;
 using Firebase.Auth;
 using Firebase.Auth.Providers;
@@ -26,6 +25,9 @@ using Warehouse.Infrastructure.Persistence;
 using Warehouse.Infrastructure.Storage;
 using dotenv.net;
 using Microsoft.AspNetCore.Authorization;
+using Minio;
+using Minio.DataModel.Args;
+using Warehouse.DomainWarehouse.Domain.Common;
 
 DotEnv.Load();
 
@@ -96,11 +98,16 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
 });
+builder.Services.AddSingleton<IMinioClient>(_ => new MinioClient()
+    .WithEndpoint(Environment.GetEnvironmentVariable("MINIO_ENDPOINT"))
+    .WithCredentials(Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY"),
+        Environment.GetEnvironmentVariable("MINIO_SECRET_KEY"))
+    .WithSSL(bool.Parse(Environment.GetEnvironmentVariable("MINIO_USE_SSL") ?? "false"))
+    .Build());
+
 builder.Services.AddSingleton<IFileStorage>(sp =>
-{
-    var env = sp.GetRequiredService<IWebHostEnvironment>();
-    return new LocalFileStorage(env.WebRootPath);
-});
+    new MinioFileStorage(sp.GetRequiredService<IMinioClient>(),
+        Environment.GetEnvironmentVariable("MINIO_BUCKET") ?? throw new InvalidOperationException()));
 
 builder.Services.AddHealthChecks()
     .AddNpgSql(configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException())
@@ -178,6 +185,10 @@ builder.Services.AddAuthorizationBuilder()
 builder.Services.AddSession();
 
 var app = builder.Build();
+var minioClient = app.Services.GetRequiredService<IMinioClient>();
+var bucket = Environment.GetEnvironmentVariable("MINIO_BUCKET");
+if (!await minioClient.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket)))
+    await minioClient.MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket));
 
 app.UseMiddleware<IdCorrelationMiddleware>();
 app.UseRequestLocalization();

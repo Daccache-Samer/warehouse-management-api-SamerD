@@ -1,0 +1,39 @@
+﻿services:
+  warehouse.domainwarehouse.domain:
+    image: warehouse.domainwarehouse.domain
+    build:
+      context: .
+      dockerfile: Warehouse.DomainWarehouse.Domain/Dockerfile
+
+  warehouse.application:
+    image: warehouse.application
+    build:
+      context: .
+      dockerfile: Warehouse.Application/Dockerfile
+
+  warehouse.infrastructure:
+    image: warehouse.infrastructure
+    build:
+      context: .
+      dockerfile: Warehouse.Infrastructure/Dockerfile
+
+  warehouse.presentation:
+    image: warehouse.presentation
+    build:
+      context: .
+      dockerfile: Warehouse.Presentation/Dockerfile
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ':9001'
+
+volumes:
+  minio_data:
