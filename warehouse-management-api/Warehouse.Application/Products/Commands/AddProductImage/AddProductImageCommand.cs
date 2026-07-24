@@ -7,4 +7,5 @@ public record AddProductImageCommand(
     string ProductId,
     Stream Content,
     string FileName,
-    long Length) : IRequest<ProductViewModel>;
+    long Length,
+    string ContentType) : IRequest<ProductViewModel>;

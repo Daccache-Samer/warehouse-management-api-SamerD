@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Warehouse.Application.Products.Commands.AdjustProductStock;
 using Warehouse.Application.Products.ViewModels;
@@ -11,6 +12,7 @@ namespace warehouse_management_api.Controllers;
 public class StockAdjustmentsController(IMediator mediator) : ControllerBase
 {
     [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> Create(
         [FromBody] AdjustProductStockRequest request,
         CancellationToken cancellationToken = default)

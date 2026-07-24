@@ -27,6 +27,16 @@ public class Supplier
             IsActive = true
         };
     }
+    private readonly List<SupplierDocument> _documents = [];
+    public IReadOnlyCollection<SupplierDocument> Documents => _documents.AsReadOnly();
+
+    public void AddDocument(SupplierDocument document)
+    {
+        if (!IsActive)
+            throw new DomainException("Cannot add a document to a deactivated supplier.");
+        _documents.Add(document);
+    }
+    public void RemoveDocument(SupplierDocument document) => _documents.Remove(document);
 
     public void Deactivate()
     {

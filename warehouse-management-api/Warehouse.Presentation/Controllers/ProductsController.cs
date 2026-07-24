@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Warehouse.Application.Products.Commands.AddProductImage;
 using Warehouse.Application.Products.Commands.ArchiveProduct;
@@ -10,6 +11,7 @@ using Warehouse.Application.Products.Queries.GetProductById;
 using Warehouse.Application.Products.Queries.ListProducts;
 using Warehouse.Application.Products.Queries.SearchProducts;
 using warehouse_management_api.Contracts;
+using Warehouse.Application.Products.Queries.DownloadProductImage;
 using Warehouse.Application.Products.ViewModels;
 
 namespace warehouse_management_api.Controllers;
@@ -19,6 +21,7 @@ namespace warehouse_management_api.Controllers;
 public class ProductsController(IMediator mediator) : ControllerBase
 {
     [HttpGet]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<ProductViewModel>> GetAll([FromQuery] bool onlyAvailable = false,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new ListProductsQuery(onlyAvailable), cancellationToken);
@@ -26,6 +29,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("{id}")]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<ProductViewModel>> GetById(
         [FromRoute] string id,CancellationToken cancellationToken = default)
     {
@@ -34,6 +38,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("search")]
+    [Authorize(Policy = "ApiUser")]
     public async Task<ActionResult<ProductViewModel>> Search([FromQuery] string? name, [FromQuery] string? supplier,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new SearchProductsQuery(name, supplier), cancellationToken);
@@ -41,6 +46,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> Create(
         [FromBody] CreateProductRequest request,[FromQuery] string? culture,CancellationToken cancellationToken = default)
     {
@@ -53,6 +59,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/quantity")]
+    [Authorize(Policy="AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> UpdateQuantity([FromRoute] string id, [FromBody] UpdateProductQuantityRequest request,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new UpdateProductQuantityCommand(id, request.QuantityInStock), cancellationToken);
@@ -60,6 +67,7 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/price")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> UpdatePrice([FromRoute] string id, [FromBody] UpdateProductPriceRequest request,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new UpdateProductPriceCommand(id, request.Price), cancellationToken);
@@ -67,20 +75,20 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/image")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> UploadImage([FromRoute] string id, IFormFile? file,CancellationToken cancellationToken = default)
     {
         if (file is null || file.Length == 0)
         {
             return BadRequest("No file was uploaded.");
         }
-
-        await using var stream = file.OpenReadStream();
-        var command = new AddProductImageCommand(id, stream, file.FileName, file.Length);
+        var command = new AddProductImageCommand(id, file.OpenReadStream(), file.FileName, file.Length,file.ContentType);
         var result = await mediator.Send(command, cancellationToken);
         return Ok(result);
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> Delete([FromRoute] string id,CancellationToken cancellationToken = default)
     {
         await mediator.Send(new ArchiveProductCommand(id), cancellationToken);
@@ -88,11 +96,12 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpGet("server-time")]
+    [Authorize(Policy = "ApiUser")]
     public IActionResult GetServerTime([FromHeader(Name = "Accept-Language")] string? acceptLanguage)
     {
         var culture = (acceptLanguage ?? "en-US").Split(',')[0].Trim();
 
-        string formatted = culture switch
+        var formatted = culture switch
         {
             "fr-FR" => DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss", new System.Globalization.CultureInfo("fr-FR")),
             "ar-LB" => DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss", new System.Globalization.CultureInfo("ar-LB")),
@@ -103,9 +112,17 @@ public class ProductsController(IMediator mediator) : ControllerBase
     }
 
     [HttpPost("{id}/assign-supplier/{supplierId}")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<ProductViewModel>> AssignSupplier([FromRoute] string id, [FromRoute] string supplierId,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new AssignSupplierToProductCommand(id, supplierId), cancellationToken);
         return Ok(result);
+    }
+    [HttpGet("{id}/images/{fileName}/download")]
+    [Authorize(Policy = "ApiUser")]
+    public async Task<IActionResult> DownloadImage([FromRoute] string id, [FromRoute] string fileName, CancellationToken cancellationToken = default)
+    {
+        var result = await mediator.Send(new DownloadProductImageQuery(id, fileName), cancellationToken);
+        return File(result.Content, result.ContentType, result.FileName);
     }
 }

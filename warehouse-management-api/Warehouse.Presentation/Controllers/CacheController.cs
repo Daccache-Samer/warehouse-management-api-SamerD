@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Warehouse.Application.Trackers;
 
 namespace warehouse_management_api.Controllers;
@@ -8,6 +9,7 @@ namespace warehouse_management_api.Controllers;
 public class CacheController(CacheStatisticsTracker cacheTracker) : ControllerBase
 {
     [HttpGet("statistics")]
+    [Authorize(Policy = "AdminOnly")]
     public IActionResult GetStatistics()
     {
         var stats = new

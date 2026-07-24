@@ -1,19 +1,35 @@
+using System.Reflection;
+using System.Text.Json.Serialization;
+using Firebase.Auth;
+using Firebase.Auth.Providers;
+using FirebaseAdmin;
 using Hangfire;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using HealthChecks.UI.Client;
-using Serilog;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
-using warehouse_management_api.Filters; 
-using Warehouse.Application.Products.Commands.CreateProduct;
-using Warehouse.DomainWarehouse.Domain.Products;
-using Warehouse.DomainWarehouse.Domain.Suppliers;
-using Warehouse.Infrastructure.Storage;
+using Serilog;
+using warehouse_management_api.Filters;
 using warehouse_management_api.Middleware;
 using Warehouse.Application.BackgroundJobs;
-using Warehouse.Infrastructure.Persistence;
+using Warehouse.Application.Products;
+using Warehouse.Application.Products.Commands.CreateProduct;
 using Warehouse.Application.Trackers;
+using Warehouse.DomainWarehouse.Domain.Products;
+using Warehouse.DomainWarehouse.Domain.Suppliers;
+using Warehouse.Infrastructure.Firebase;
+using Warehouse.Infrastructure.Persistence;
+using Warehouse.Infrastructure.Storage;
+using dotenv.net;
+using Microsoft.AspNetCore.Authorization;
+using Minio;
+using Minio.DataModel.Args;
+using Warehouse.DomainWarehouse.Domain.Common;
+
+DotEnv.Load();
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration; 
@@ -28,15 +44,15 @@ builder.Services.AddControllers(options =>
         options.Filters.Add<ModelValidationFilter>();
     })
     .AddJsonOptions(options =>
-        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter()));
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddLocalization();
 string[] supportedCultures = ["en", "fr"];
 builder.Services.Configure<RequestLocalizationOptions>(options => options.SetDefaultCulture(supportedCultures[0])
     .AddSupportedCultures(supportedCultures)
     .AddSupportedUICultures(supportedCultures));
-builder.Services.AddAutoMapper(cfg =>
-    { }, typeof(Warehouse.Application.Products.ProductMappingProfile).Assembly);
+builder.Services.AddAutoMapper(_ =>
+    { }, typeof(ProductMappingProfile).Assembly);
 builder.Services.AddDbContext<WarehouseDbContext>(options =>
     options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddSwaggerGen(options =>
@@ -46,11 +62,26 @@ builder.Services.AddSwaggerGen(options =>
         Type = JsonSchemaType.String,
         Format = "binary"
     });
-    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization",
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        In = ParameterLocation.Header,
+        Description = "Paste the raw Firebase ID token (no 'Bearer ' prefix needed)"
+    });
+
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        [new OpenApiSecuritySchemeReference("Bearer", document)] = []
+    });
+
+    var xmlFile = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
     var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
     options.IncludeXmlComments(xmlPath);
 });
-
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = 
@@ -67,11 +98,16 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.SuppressModelStateInvalidFilter = true;
 });
+builder.Services.AddSingleton<IMinioClient>(_ => new MinioClient()
+    .WithEndpoint(Environment.GetEnvironmentVariable("MINIO_ENDPOINT"))
+    .WithCredentials(Environment.GetEnvironmentVariable("MINIO_ACCESS_KEY"),
+        Environment.GetEnvironmentVariable("MINIO_SECRET_KEY"))
+    .WithSSL(bool.Parse(Environment.GetEnvironmentVariable("MINIO_USE_SSL") ?? "false"))
+    .Build());
+
 builder.Services.AddSingleton<IFileStorage>(sp =>
-{
-    var env = sp.GetRequiredService<IWebHostEnvironment>();
-    return new LocalFileStorage(env.WebRootPath);
-});
+    new MinioFileStorage(sp.GetRequiredService<IMinioClient>(),
+        Environment.GetEnvironmentVariable("MINIO_BUCKET") ?? throw new InvalidOperationException()));
 
 builder.Services.AddHealthChecks()
     .AddNpgSql(configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException())
@@ -91,20 +127,80 @@ builder.Services.AddHangfireServer();
 builder.Services.AddScoped<ExpiryDateCheckJob>();
 builder.Services.AddSingleton<CacheStatisticsTracker>();
 
+Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", @"warehouse-management-api-12faf-firebase-adminsdk-fbsvc-0c8a5b4099.json");
+builder.Services.AddSingleton(FirebaseApp.Create());
+builder.Services.AddSingleton<IFirebaseUserService, FirebaseUserService>();
+builder.Services.AddRazorPages(options =>
+{
+    options.Conventions.AuthorizePage("/Authenticated");
+});
+var firebaseProjectName = Environment.GetEnvironmentVariable("PROJECT_ID");
+var apiKey = Environment.GetEnvironmentVariable("API_KEY");
+var authDomain = Environment.GetEnvironmentVariable("AUTHDOMAIN");
+builder.Services.AddSingleton(new FirebaseAuthClient(new FirebaseAuthConfig
+{
+    ApiKey =apiKey,
+    AuthDomain = authDomain,
+    Providers =
+    [
+        new EmailProvider(),
+        new GoogleProvider()
+    ]
+}));
+builder.Services.AddSingleton<IFirebaseAuthService, FirebaseAuthService>(); 
+builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, ApiAuthorizationResultHandler>();
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme;
+    })
+    .AddCookie(options =>
+    {
+        options.LoginPath = "/Unauthenticated"; 
+        options.AccessDeniedPath = "/Unauthenticated";
+    })
+    .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
+    {
+        options.MapInboundClaims = false;
+        options.Authority = $"https://securetoken.google.com/{firebaseProjectName}";
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = $"https://securetoken.google.com/{firebaseProjectName}",
+            ValidateAudience = true,
+            ValidAudience = firebaseProjectName,
+            ValidateLifetime = true,
+            RoleClaimType = "role" 
+        };
+    });
+
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("ApiUser", policy => policy
+        .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+        .RequireAuthenticatedUser())
+    .AddPolicy("AdminOnly", policy => policy
+        .AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+        .RequireRole("admin"));
+
+builder.Services.AddSession();
+
 var app = builder.Build();
-
-app.UseHangfireDashboard("/hangfire");
-
-var cron = app.Configuration["* * * * *"] ?? Cron.Hourly();
-RecurringJob.AddOrUpdate<ExpiryDateCheckJob>(
-    "expiry-check",
-    job => job.ExecuteAsync(CancellationToken.None),
-    cron);
+var minioClient = app.Services.GetRequiredService<IMinioClient>();
+var bucket = Environment.GetEnvironmentVariable("MINIO_BUCKET");
+if (!await minioClient.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket)))
+    await minioClient.MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket));
 
 app.UseMiddleware<IdCorrelationMiddleware>();
 app.UseRequestLocalization();
 app.UseMiddleware<RequestTimingMiddleware>();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseStaticFiles();
+app.UseSession();
+app.UseRouting();
+
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapHealthChecks("/health", new HealthCheckOptions
 {
     ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse
@@ -114,12 +210,22 @@ app.MapHealthChecksUI(options =>
     options.UIPath = "/health-ui";
     options.ApiPath = "/health-ui-api";
 });
+
+app.UseHangfireDashboard();
+
+var cron = app.Configuration["* * * * *"] ?? Cron.Hourly();
+RecurringJob.AddOrUpdate<ExpiryDateCheckJob>(
+    "expiry-check",
+    job => job.ExecuteAsync(CancellationToken.None),
+    cron);
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
+app.MapRazorPages(); 
 app.MapControllers();
 
 app.Run();

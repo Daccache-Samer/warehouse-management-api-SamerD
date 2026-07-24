@@ -1,0 +1,15 @@
+﻿@page
+@model LogoutModel
+@{
+    ViewData["Title"] = "Logout";
+}
+
+<header class="text-center mt-5">
+    <h1>Logout</h1>
+    <p>Are you sure you want to log out of the application?</p>
+    
+    <form method="post">
+        @Html.AntiForgeryToken()
+        <button type="submit" class="btn btn-danger">Confirm Logout</button>
+    </form>
+</header>

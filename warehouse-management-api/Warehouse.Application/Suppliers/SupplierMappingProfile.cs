@@ -9,5 +9,6 @@ public class SupplierMappingProfile : Profile
     public SupplierMappingProfile()
     {
         CreateMap<Supplier, SupplierViewModel>();
+        CreateMap<SupplierDocument, SupplierDocumentViewModel>();
     }
 }

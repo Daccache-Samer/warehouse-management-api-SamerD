@@ -5,6 +5,6 @@ namespace Warehouse.Application.Suppliers;
 
 public static class SupplierCacheKeys
 {
-    public static string ById(string id) => $"{nameof(GetSupplierByIdQuery)}";
+    public static string ById(string id) => $"{nameof(GetSupplierByIdQuery)}--{id}";
     public const string List = $"{nameof(ListSuppliersQuery)}";
 }
