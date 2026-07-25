@@ -2,6 +2,7 @@
 using MediatR;
 using Microsoft.Extensions.Caching.Distributed;
 using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
 using Warehouse.Application.Suppliers.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Common;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
@@ -9,7 +10,8 @@ using Warehouse.DomainWarehouse.Domain.Suppliers;
 namespace Warehouse.Application.Suppliers.Commands.AddSupplierDocument;
 
 public class AddSupplierDocumentHandler(
-    ISupplierRepository supplierRepository, IFileStorage fileStorage, IMapper mapper,IDistributedCache cache)
+    ISupplierRepository supplierRepository, IFileStorage fileStorage, IMapper mapper,IDistributedCache cache
+    ,IEventPublisher eventPublisher,ICorrelationContext correlationContext)
     : IRequestHandler<AddSupplierDocumentCommand, SupplierViewModel>
 {
     private static readonly string[] AllowedExtensions = [".pdf", ".doc", ".docx"];
@@ -41,6 +43,20 @@ public class AddSupplierDocumentHandler(
         await supplierRepository.UpdateAsync(supplier, ct);
         await cache.RemoveAsync(SupplierCacheKeys.ById(supplier.SupplierId), ct);
         await cache.RemoveAsync(SupplierCacheKeys.List, ct);
+        
+        await eventPublisher.PublishAsync(
+            new WarehouseFileUploadedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.FileUploaded,
+                RelatedEntityId = supplier.SupplierId,
+                RelatedEntityType = "Supplier",
+                Severity = "Info",
+                FileName = result.FileName,
+                ObjectKey = result.ObjectKey
+            },
+            EventTypes.FileUploaded,
+            ct);
         
         return mapper.Map<SupplierViewModel>(supplier);
     }
