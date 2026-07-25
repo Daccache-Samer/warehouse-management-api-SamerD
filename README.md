@@ -1,20 +1,16 @@
 # \# Warehouse Management API
 
-# 
+#
 
 A REST API for managing warehouse inventory, built with ASP.NET Core 8 as part of Session 02 of the Inmind Academy REST APIs lab.
 
 ##### \## Tech Stack
-
-
 
 \- .NET 8 / ASP.NET Core Web API
 
 \- Swashbuckle.AspNetCore (Swagger / OpenAPI)
 
 \- In-memory storage (static `List<T>` stores, no persistence)
-
-
 
 ##### \## Project Structure
 
@@ -58,15 +54,9 @@ warehouse-management-api/
 
 └── Program.cs
 
-
-
 Products talk directly to `FakeWarehouseStore` from the controller. Suppliers go through a service layer (`ISupplierService` / `SupplierService`) so `ProductsController` can validate supplier existence via dependency injection when assigning a supplier to a product.
 
-
-
 \## Getting Started
-
-
 
 \### Prerequisites
 
@@ -74,11 +64,7 @@ Products talk directly to `FakeWarehouseStore` from the controller. Suppliers go
 
 \- An IDE (JetBrains Rider / VS Code / Visual Studio)
 
-
-
 \### Run
-
-
 
 ```bash
 
@@ -88,39 +74,23 @@ dotnet run
 
 ```
 
-
-
-Run using the `http` or `https` launch profile (not IIS Express). On startup, navigate to:https://localhost:{port}/swagger
+Run using the `http` or `https` launch profile (not IIS Express). On startup, navigate to:<https://localhost:{port}/swagger>
 
 to access the Swagger UI and test all endpoints interactively.
 
-
-
 \## Business Scenario
-
-
 
 The warehouse stores products that can be added, listed, searched, updated, archived, assigned images, filtered by supplier, and filtered by stock availability. All data is in-memory and resets on restart.
 
-
-
 \---
-
-
 
 \## Product Endpoints
 
-
-
 Base route: `api/products`
-
-
 
 \### 1. Get all products GET /api/products
 
 Returns all products sorted by `CreatedAt` descending.
-
-
 
 \*\*Query parameters:\*\*
 
@@ -130,19 +100,13 @@ Returns all products sorted by `CreatedAt` descending.
 
 | `onlyAvailable` | bool | If `true`, filters out archived products and products with `QuantityInStock == 0`. Default `false`. |
 
-
-
 \### 2. Get product by id GET /api/products/{id}
 
 Returns `404` if no product matches the given id.
 
-
-
 \### 3. Search products GET /api/products/search?name=...\&supplier=...
 
 Partial, case-insensitive match on `Name` and/or `SupplierName`. At least one of `name` or `supplier` must be provided, otherwise returns `400`.
-
-
 
 \### 4. Create product POST /api/products
 
@@ -172,33 +136,21 @@ Partial, case-insensitive match on `Name` and/or `SupplierName`. At least one of
 
 Generates `Id` and `CreatedAt`/`LastUpdatedAt` server-side. Returns `409 Conflict` if the SKU already exists (exact match, case-insensitive).
 
-
-
 \### 5. Update quantity POST /api/products/{id}/quantity
 
 \*\*Body:\*\* `{ "quantityInStock": 0 }`
 
-
-
 Returns `400` if the quantity is negative. Updates `LastUpdatedAt`.
-
-
 
 \### 6. Update price POST /api/products/{id}/price
 
 \*\*Body:\*\* `{ "price": 0 }`
 
-
-
 Returns `400` if the price is `<= 0`. Old/new value is logged to the console. Updates `LastUpdatedAt`.
-
-
 
 \### 7. Upload image POST /api/products/{id}/image
 
 `multipart/form-data`, field name `file`.
-
-
 
 \- Only `.jpg`, `.jpeg`, `.png` accepted
 
@@ -206,39 +158,23 @@ Returns `400` if the price is `<= 0`. Old/new value is logged to the console. Up
 
 \- Saved to `wwwroot/uploads`
 
-
-
 \### 8. Delete product (soft delete) DELETE /api/products/{id}
 
 Sets `IsArchived = true`. The product is never removed from the store.
-
-
 
 \### 9. Get warehouse server time GET /api/products/server-time
 
 Header: `Accept-Language: en-US | fr-FR | ar-LB`
 
-
-
 Returns the current server time formatted according to the given culture (defaults to `en-US`).
-
-
 
 \---
 
-
-
 \## Homework — Supplier Module \& Product-Supplier Link
-
-
 
 \### Supplier Endpoints
 
-
-
 Base route: `api/suppliers`
-
-
 
 | Method | Route | Description |
 
@@ -251,8 +187,6 @@ Base route: `api/suppliers`
 | POST | `/api/suppliers` | Create a new supplier |
 
 | DELETE | `/api/suppliers/{id}` | Deactivate a supplier (soft delete — sets `IsActive = false`) |
-
-
 
 \*\*Create supplier body:\*\*
 
@@ -274,8 +208,6 @@ Base route: `api/suppliers`
 
 `Id` is generated server-side, `IsActive` defaults to `true`.
 
-
-
 \### Assign Supplier to Product POST /api/products/{id}/assign-supplier/{supplierId}
 
 \*\*Validation:\*\*
@@ -285,8 +217,6 @@ Base route: `api/suppliers`
 \- `404` if the supplier does not exist
 
 \- `400` if the product is archived (`IsArchived == true`)
-
-
 
 On success, sets `product.SupplierId` and updates `LastUpdatedAt`.
 
@@ -370,8 +300,6 @@ centrally, instead of repeating `try/catch` in every controller action:
 |`ValidationException`|400|
 |`DomainException`|400|
 
-
-
 ### Tests
 
 Two test projects added under `tests/`:
@@ -406,8 +334,8 @@ dotnet test
 
 This session connects the warehouse system to a real Postgres database, built twice:
 
-- **Database First** (`session-04-database-connection-db-first`) — scaffolded from an existing schema.
-- **Code First** (`session-04-database-connection-code-first`) — migrations generated from the existing Session 03 Domain entities. **This is the branch that will be merged.**
+* **Database First** (`session-04-database-connection-db-first`) — scaffolded from an existing schema.
+* **Code First** (`session-04-database-connection-code-first`) — migrations generated from the existing Session 03 Domain entities. **This is the branch that will be merged.**
 
 Both connect to Postgres running in Docker.
 
@@ -451,8 +379,8 @@ The real Session 03 `Product`/`Supplier` Domain entities were mapped to Postgres
 
 **WarehouseDbContext** (`Warehouse.Infrastructure/Persistence/CodeFirst/WarehouseDbContext.cs`) required minimal explicit Fluent API configuration, specifically because of choices made in Session 3's rich domain model:
 
-- `Product.SupplierId` has no navigation property on either side (a deliberate Session 3 decoupling decision) — EF's convention-based FK discovery can't detect it without being told explicitly via `HasForeignKey`.
-- `ProductImage` has no `Id` property by design uses a composite key (`ProductId`, `FileName`) instead.
+* `Product.SupplierId` has no navigation property on either side (a deliberate Session 3 decoupling decision) — EF's convention-based FK discovery can't detect it without being told explicitly via `HasForeignKey`.
+* `ProductImage` has no `Id` property by design uses a composite key (`ProductId`, `FileName`) instead.
 
 No custom configuration was needed for entity IDs — EF Core's default convention already treats `string` primary keys as client-generated (unlike `int`/`Guid`, there's no built-in generation strategy for `string`), matching how `Product.Create()`/`Supplier.Create()` already assign IDs before the entity reaches the database.
 
@@ -476,10 +404,10 @@ dotnet ef database update \
 
 Key changes from the in-memory version:
 
-- **`UpdateAsync` now does real work.** In-memory, this was a documented no-op (mutating a reference type in a `List<T>` needs no explicit save). Against a real database, it calls `SaveChangesAsync()`. Since `WarehouseDbContext` is scoped per-request, the same context instance tracks an entity across a handler's `GetByIdAsync` → domain-method mutation → `UpdateAsync` sequence — EF's change tracker detects mutations made via private setters through domain methods (e.g. `product.UpdatePrice(...)`) just as it would public ones, so no explicit `.Update()` call is needed.
-- **`GetBySkuAsync` uses `EF.Functions.ILike`**, not `.Equals(..., OrdinalIgnoreCase)` — `StringComparison.OrdinalIgnoreCase` has no SQL translation; `ILike` is Npgsql's case-insensitive match, translating to Postgres's native `ILIKE`.
-- **`GetByIdAsync` eager-loads the `_images` backing field** (`.Include("_images")`) — required specifically for `AddProductImageHandler`, which fetches a product and mutates its image collection; without eager loading, EF wouldn't be tracking that collection and the new image wouldn't persist.
-- **Read-only queries use `.AsNoTracking()`** (`GetAllAsync`, `GetBySkuAsync`) to skip unnecessary change-tracking overhead.
+* **`UpdateAsync` now does real work.** In-memory, this was a documented no-op (mutating a reference type in a `List<T>` needs no explicit save). Against a real database, it calls `SaveChangesAsync()`. Since `WarehouseDbContext` is scoped per-request, the same context instance tracks an entity across a handler's `GetByIdAsync` → domain-method mutation → `UpdateAsync` sequence — EF's change tracker detects mutations made via private setters through domain methods (e.g. `product.UpdatePrice(...)`) just as it would public ones, so no explicit `.Update()` call is needed.
+* **`GetBySkuAsync` uses `EF.Functions.ILike`**, not `.Equals(..., OrdinalIgnoreCase)` — `StringComparison.OrdinalIgnoreCase` has no SQL translation; `ILike` is Npgsql's case-insensitive match, translating to Postgres's native `ILIKE`.
+* **`GetByIdAsync` eager-loads the `_images` backing field** (`.Include("_images")`) — required specifically for `AddProductImageHandler`, which fetches a product and mutates its image collection; without eager loading, EF wouldn't be tracking that collection and the new image wouldn't persist.
+* **Read-only queries use `.AsNoTracking()`** (`GetAllAsync`, `GetBySkuAsync`) to skip unnecessary change-tracking overhead.
 
 **DI registration changed from `AddSingleton` to `AddScoped`**
 
@@ -510,9 +438,10 @@ Every handler returning a ViewModel injects `IMapper` and calls `_mapper.Map<Pro
 
 ## Session 05 Lab - Harden Warehouse Management API
 
-### Comparison between filters and middleware:
-Middleware operates on HttpContext, it has no knowledge of MVC concepts, it handles HTTP concerns like: CORS, authentication, authorization, correlation ID tracking. request logging/timing. 
-Filters run within the MVC action execution pipeline, they are fully aware of MVC metadata, action parameters and results and model binding state, they handle controller-specific or action-specific concerns like: result formatting, validation checks and action-level logging. 
+### Comparison between filters and middleware
+
+Middleware operates on HttpContext, it has no knowledge of MVC concepts, it handles HTTP concerns like: CORS, authentication, authorization, correlation ID tracking. request logging/timing.
+Filters run within the MVC action execution pipeline, they are fully aware of MVC metadata, action parameters and results and model binding state, they handle controller-specific or action-specific concerns like: result formatting, validation checks and action-level logging.
 
 ### New middleware componenets
 
@@ -534,53 +463,59 @@ Filters run within the MVC action execution pipeline, they are fully aware of MV
 ## Session 06 Lab - Observability and Performance
 
 ### 1. Localization
+
 - **Request Localization:** Configured the application to support multiple cultures (`en` and `fr`).
-- **Resource Files:** Used `SharedResources.resx` to provide localized error messages and responses.
-- **Swagger Integration:** Enabled changing the request culture directly from the Swagger UI.
+* **Resource Files:** Used `SharedResources.resx` to provide localized error messages and responses.
+* **Swagger Integration:** Enabled changing the request culture directly from the Swagger UI.
 
 ### 2. Structured Logging with Serilog
+
 - **Configuration:** Replaced the default .NET logger with Serilog.
-- **Sinks:** Logs are written to both the Console and rolling log files (`Logs/log-.txt`).
-- **Structured Events:** Logged critical business events (e.g., product creation, stock adjustments, archiving) with structured properties for easier querying.
-- **Slow Request Logging:** (Challenge) Enhanced the `RequestTimingMiddleware` to warn when any API request exceeds a 500ms execution threshold.
+* **Sinks:** Logs are written to both the Console and rolling log files (`Logs/log-.txt`).
+* **Structured Events:** Logged critical business events (e.g., product creation, stock adjustments, archiving) with structured properties for easier querying.
+* **Slow Request Logging:** (Challenge) Enhanced the `RequestTimingMiddleware` to warn when any API request exceeds a 500ms execution threshold.
 
 ### 3. Caching with Redis
+
 - **Distributed Caching:** Integrated `IDistributedCache` using `StackExchange.Redis` to cache expensive query results (`GetProductById`,`GetSupplierById`, `ListProducts`, `ListSuppliers`).
-- **Cache Invalidation:** Ensured that cache entries are explicitly removed (`RemoveAsync`) whenever a write operation (Create, Update, Adjust Stock, Archive) affects the cached entities.
-- **Cache Statistics:** Implemented a custom `CacheStatisticsTracker` and a `CacheController` to expose hit/miss counts, last refresh times, and currently cached keys on `/api/cache/statistics`.
+* **Cache Invalidation:** Ensured that cache entries are explicitly removed (`RemoveAsync`) whenever a write operation (Create, Update, Adjust Stock, Archive) affects the cached entities.
+* **Cache Statistics:** Implemented a custom `CacheStatisticsTracker` and a `CacheController` to expose hit/miss counts, last refresh times, and currently cached keys on `/api/cache/statistics`.
 
 ### 4. Health Checks
+
 - **Dependency Monitoring:** Added specific health checks for both the PostgreSQL database (`AspNetCore.HealthChecks.Npgsql`) and Redis (`AspNetCore.HealthChecks.Redis`).
-- **Health Checks UI:** Exposed a `/health` endpoint and configured the visual dashboard at `/health-ui` to monitor system status.
+* **Health Checks UI:** Exposed a `/health` endpoint and configured the visual dashboard at `/health-ui` to monitor system status.
 
 ### 5. Background Jobs with Hangfire
+
 - **Recurring Tasks:** Implemented an `ExpiryDateCheckJob` scheduled to run automatically (e.g., hourly).
-- **In-Memory / Postgres Storage:** Hangfire is configured to persist job states and schedules reliably.
-- **Expiry Logic:** The job queries products expiring within 30 days and logs the affected products.
-- **Auto-Archiving:** (Challenge) Enhanced the background job to automatically archive any product that has been expired for more than 7 days, maintaining warehouse data hygiene without manual intervention.
+* **In-Memory / Postgres Storage:** Hangfire is configured to persist job states and schedules reliably.
+* **Expiry Logic:** The job queries products expiring within 30 days and logs the affected products.
+* **Auto-Archiving:** (Challenge) Enhanced the background job to automatically archive any product that has been expired for more than 7 days, maintaining warehouse data hygiene without manual intervention.
 
 ## Session 07 Lab - Firebase Auth and MinIO
 
 ### 1. Authentication
 
-- **JWT Bearer validation**: `AddJwtBearer` validates ID tokens against Firebase's issuer (`https://securetoken.google.com/{ProjectId}`) and audience (the Firebase Project ID), with `ValidateLifetime` enforced.
+* **JWT Bearer validation**: `AddJwtBearer` validates ID tokens against Firebase's issuer (`https://securetoken.google.com/{ProjectId}`) and audience (the Firebase Project ID), with `ValidateLifetime` enforced.
 
-- **Razor Pages login flow** — I created 5 pages to test authentication. /SignUp lets you create a new user. /login lets you log into an already created user and then sends you to /authenticated. /logout lets you log out of a user. If you try to access /authenticated before logging into a valid account you are redirected to /unauthenticated. 
+* **Razor Pages login flow** — I created 5 pages to test authentication. /SignUp lets you create a new user. /login lets you log into an already created user and then sends you to /authenticated. /logout lets you log out of a user. If you try to access /authenticated before logging into a valid account you are redirected to /unauthenticated.
 
 ### 2. Authorization
 
-- **Two policies**:
-  - `ApiUser` — any authenticated user (`RequireAuthenticatedUser`).Applied on all read endpints.
-  - `AdminOnly` — requires the `admin` role (`RequireRole("admin")`).Applied on all create/delete endpoints.
--- **Swagger Authorize button** — I added a Bearer security definition to `AddSwaggerGen` so a raw Firebase ID token can be pasted into Swagger UI once per session and reused on every subsequent request. You have to use the following command in postman to get the token: https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=<API_KEY> 
-accompanied by the following body: 
+* **Two policies**:
+  * `ApiUser` — any authenticated user (`RequireAuthenticatedUser`).Applied on all read endpints.
+  * `AdminOnly` — requires the `admin` role (`RequireRole("admin")`).Applied on all create/delete endpoints.
+-- **Swagger Authorize button** — I added a Bearer security definition to `AddSwaggerGen` so a raw Firebase ID token can be pasted into Swagger UI once per session and reused on every subsequent request. You have to use the following command in postman to get the token: <https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=><API_KEY>
+accompanied by the following body:
 {
-     "email": "admin@warehouse.com",
+     "email": "<admin@warehouse.com>",
      "password": "123456789",
      "returnSecureToken": true
    }
 
 ### 3. Object Storage with MinIO
+
 - **`MinioFileStorage`** replaces `LocalFileStorage` as the registered `IFileStorage` implementation — both product images and the new supplier documents are stored in the same MinIO bucket (`warehouse-assets`), under `products/{id}/...` and `supplier-documents/{id}/...` respectively.
 
 ### Running MinIO
@@ -588,8 +523,11 @@ accompanied by the following body:
 ```bash
 docker compose up minio -d
 ```
+
 Console UI: `http://localhost:9001`.
-### 4. .envexample:
+
+### 4. .envexample
+
 API_KEY=<secret>
 PROJECT_ID=warehouse-management-api-12faf
 AUTHDOMAIN=<secret>
@@ -601,9 +539,26 @@ MINIO_USE_SSL=false
 MINIO_ROOT_USER=admin
 MINIO_ROOT_PASSWORD=<same as MINIO_SECRET_KEY>
 
-### Endpoints added:
+### Endpoints added
 
 GET`/api/products/{id}/images/{fileName}/download`: ApiUser access. Download an image from minio.
 POST`/api/suppliers/{id}/documents`: AdminOnly access. Add a supplier document to minio.
 GET`/api/suppliers/{id}/documents/{documentId}`: ApiUser access. Download a supplier document from minio.
  DELETE`/api/suppliers/{id}/documents/{documentId}`: AAdminOnly. Delete a supplier document from minio.
+
+## Session 08 Lab - Notification Service, RabbitMQ and Service Communication
+
+### 1. RabbitMQ Integration
+- **Docker Compose:** I added docker-compose.yaml to run RabbitMQ with the management plugin on ports 5672 (AMQP) and 15672 (Management UI). You just need to go to http://localhost:15672/ to access RabbitMQ.
+- **Warehouse API (Publisher):** Integrated event publishing directly within the MediatR command handlers (`AdjustProductStockHandler`, `CreateProductHandler`, etc.) to publish domain events to the `warehouse.events` exchange.
+- **Events created:** `StockLowDetected`, `StockAdjusted`, `ProductCreated`, and `WarehouseFileUploaded`.
+
+### 2. Notification Service (`Warehouse.Notifications.Api`)
+- **Microservice Structure:** I created a completely separate solution using the DDD architecture layers.
+- **RabbitMQ Consumer:** I implemented `WarehouseEventsConsumer` as a hosted background service to listen to the `notifications.warehouse-events` queue.
+- **Notification Persistence:** The service owns its own database in the same PostgreSQL container to store `Notification` records.
+
+### 5. Bonus 3 - Retry and Dead-Letter Queue (DLQ)
+- **DLQ Topology:** I configured a Dead-Letter Exchange (`warehouse.events.dlx`) and Dead-Letter Queue (`notifications.warehouse-events.dlq`) upon queue declaration.
+- **Exponential Backoff:** The consumer implements an in-process retry loop that retries failed messages with an exponentially increasing delay.
+- **Dead-Lettering:** Once all retries are exhausted the message is routed to the DLQ for manual inspection.
