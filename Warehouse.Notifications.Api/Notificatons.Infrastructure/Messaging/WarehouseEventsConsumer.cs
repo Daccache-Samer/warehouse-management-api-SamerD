@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using MediatR;
 using Notifications.Application.Notification.Commands.ProcessWarehouseEvent;
 using Notifications.Application.IntegrationEvents;
@@ -18,6 +18,8 @@ public class WarehouseEventsConsumer(
     private readonly string _virtualHost = configuration["RabbitMq:VirtualHost"] ?? "/";
     private readonly string _exchangeName = configuration["RabbitMq:ExchangeName"] ?? "warehouse.events";
     private readonly string _queueName = configuration["RabbitMq:QueueName"] ?? "notifications.warehouse-events";
+    private readonly int _maxRetryAttempts = configuration.GetValue("RabbitMq:MaxRetryAttempts", 3);
+    private readonly int _retryDelayBaseSeconds = configuration.GetValue("RabbitMq:RetryDelayBaseSeconds", 2);
 
     private IConnection? _connection;
     private IChannel? _channel;
@@ -64,7 +66,20 @@ public class WarehouseEventsConsumer(
                 _channel = await _connection.CreateChannelAsync(cancellationToken: stoppingToken);
 
                 await _channel.ExchangeDeclareAsync(_exchangeName, ExchangeType.Topic, durable: true, autoDelete: false, cancellationToken: stoppingToken);
-                await _channel.QueueDeclareAsync(_queueName, durable: true, exclusive: false, autoDelete: false, cancellationToken: stoppingToken);
+
+                // Create Dead Letter queue
+                var dlxName = _exchangeName + ".dlx";
+                var dlqName = _queueName + ".dlq";
+
+                await _channel.ExchangeDeclareAsync(dlxName, ExchangeType.Fanout, durable: true, autoDelete: false, cancellationToken: stoppingToken);
+                await _channel.QueueDeclareAsync(dlqName, durable: true, exclusive: false, autoDelete: false, cancellationToken: stoppingToken);
+                await _channel.QueueBindAsync(dlqName, dlxName, routingKey: "", cancellationToken: stoppingToken);
+                
+                var mainQueueArgs = new Dictionary<string, object?>
+                {
+                    { "x-dead-letter-exchange", dlxName }
+                };
+                await _channel.QueueDeclareAsync(_queueName, durable: true, exclusive: false, autoDelete: false, arguments: mainQueueArgs, cancellationToken: stoppingToken);
 
                 foreach (var routingKey in RoutingKeys)
                     await _channel.QueueBindAsync(_queueName, _exchangeName, routingKey, cancellationToken: stoppingToken);
@@ -84,23 +99,45 @@ public class WarehouseEventsConsumer(
     private async Task HandleMessageAsync(BasicDeliverEventArgs ea)
     {
         var payload = Encoding.UTF8.GetString(ea.Body.ToArray());
+        Exception? lastException = null;
 
-        try
+        for (var attempt = 1; attempt <= _maxRetryAttempts; attempt++)
         {
-            using var scope = scopeFactory.CreateScope();
-            var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+            try
+            {
+                using var scope = scopeFactory.CreateScope();
+                var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
 
-            var result = await mediator.Send(new ProcessWarehouseEventCommand(ea.RoutingKey, payload));
-            if (result == EventProcessingResult.Duplicate)
-                logger.LogInformation("Ignored duplicate delivery on routing key {RoutingKey}", ea.RoutingKey);
+                var result = await mediator.Send(new ProcessWarehouseEventCommand(ea.RoutingKey, payload));
+                if (result == EventProcessingResult.Duplicate)
+                    logger.LogInformation("Ignored duplicate delivery on routing key {RoutingKey}", ea.RoutingKey);
 
-            if (_channel != null) await _channel.BasicAckAsync(ea.DeliveryTag, false);
+                // Success: acknowledge and exit
+                if (_channel != null) await _channel.BasicAckAsync(ea.DeliveryTag, false);
+                return;
+            }
+            catch (Exception ex)
+            {
+                lastException = ex;
+                logger.LogWarning(ex,
+                    "Error processing message on routing key {RoutingKey} (attempt {Attempt}/{Max})",
+                    ea.RoutingKey, attempt, _maxRetryAttempts);
+
+                if (attempt < _maxRetryAttempts)
+                {
+                    // Exponential backoff
+                    var delay = TimeSpan.FromSeconds(_retryDelayBaseSeconds * Math.Pow(2, attempt - 1));
+                    await Task.Delay(delay);
+                }
+            }
         }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Unexpected error handling message on routing key {RoutingKey}", ea.RoutingKey);
-            if (_channel != null) await _channel.BasicNackAsync(ea.DeliveryTag, false, requeue: true);
-        }
+
+        // All retries exhausted: send to Dead Letter Queue
+        logger.LogError(lastException,
+            "Message on routing key {RoutingKey} failed after {Max} attempts. Routing to DLQ.",
+            ea.RoutingKey, _maxRetryAttempts);
+
+        if (_channel != null) await _channel.BasicNackAsync(ea.DeliveryTag, false, requeue: false);
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
