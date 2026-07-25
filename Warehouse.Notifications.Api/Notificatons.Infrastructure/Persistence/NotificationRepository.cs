@@ -25,4 +25,16 @@ public class NotificationRepository(NotificationDbContext db) : INotificationRep
         db.Notifications.Update(notification);
         await db.SaveChangesAsync(ct);
     }
+    public async Task<IReadOnlyList<Notification>> GetFilteredAsync(
+        NotificationType? type, NotificationSeverity? severity, NotificationStatus? status,
+        CancellationToken ct = default)
+    {
+        var query = db.Notifications.AsQueryable();
+
+        if (type is not null) query = query.Where(n => n.Type == type);
+        if (severity is not null) query = query.Where(n => n.Severity == severity);
+        if (status is not null) query = query.Where(n => n.Status == status);
+
+        return await query.OrderByDescending(n => n.CreatedAtUtc).ToListAsync(ct);
+    }
 }

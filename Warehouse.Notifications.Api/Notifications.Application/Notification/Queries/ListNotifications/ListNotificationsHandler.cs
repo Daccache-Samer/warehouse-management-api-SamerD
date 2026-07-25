@@ -11,7 +11,8 @@ public class ListNotificationsHandler(INotificationRepository repository, IMappe
     public async Task<IReadOnlyList<NotificationViewModel>> Handle(
         ListNotificationsQuery request, CancellationToken cancellationToken)
     {
-        var notifications = await repository.GetAllAsync(cancellationToken);
+        var notifications = await repository.GetFilteredAsync(
+            request.Type, request.Severity, request.Status, cancellationToken);
         return mapper.Map<IReadOnlyList<NotificationViewModel>>(notifications);
     }
 }
