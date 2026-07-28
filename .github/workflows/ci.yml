@@ -1,0 +1,51 @@
+﻿name: CI
+
+on:
+  push:
+    branches: [ main, 'session-**' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test-coverage:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore warehouse-management-api.sln
+        working-directory: warehouse-management-api
+
+      - name: Build
+        run: dotnet build warehouse-management-api.sln --no-restore --configuration Release
+        working-directory: warehouse-management-api
+
+      - name: Test with coverage
+        run: >
+          dotnet test warehouse-management-api.sln
+          --no-build --configuration Release
+          --settings coverlet.runsettings
+        working-directory: warehouse-management-api
+
+      - name: Install ReportGenerator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+
+      - name: Generate coverage report
+        run: >
+          reportgenerator
+          -reports:"warehouse-management-api/TestResults/**/coverage.cobertura.xml"
+          -targetdir:"coveragereport"
+          -reporttypes:"Html;Cobertura;TextSummary"
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coveragereport
