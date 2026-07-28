@@ -128,17 +128,21 @@ builder.Services.AddHangfire(config => config
 builder.Services.AddHangfireServer();
 builder.Services.AddScoped<ExpiryDateCheckJob>();
 builder.Services.AddSingleton<CacheStatisticsTracker>();
+if (!builder.Environment.IsEnvironment("Testing") )//This breaks the app on startup if firebase is not able to be accessed. firebase can only be accessed on my machine, so I added the condition so it doesn't trigger during testing so anyone can run the tests.
+{
+    Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS",
+        @"warehouse-management-api-12faf-firebase-adminsdk-fbsvc-0c8a5b4099.json");
+    builder.Services.AddSingleton(FirebaseApp.Create());
+}
 
-Environment.SetEnvironmentVariable("GOOGLE_APPLICATION_CREDENTIALS", @"warehouse-management-api-12faf-firebase-adminsdk-fbsvc-0c8a5b4099.json");
-builder.Services.AddSingleton(FirebaseApp.Create());
 builder.Services.AddSingleton<IFirebaseUserService, FirebaseUserService>();
 builder.Services.AddRazorPages(options =>
 {
     options.Conventions.AuthorizePage("/Authenticated");
 });
-var firebaseProjectName = Environment.GetEnvironmentVariable("PROJECT_ID");
-var apiKey = Environment.GetEnvironmentVariable("API_KEY");
-var authDomain = Environment.GetEnvironmentVariable("AUTHDOMAIN");
+var firebaseProjectName = Environment.GetEnvironmentVariable("PROJECT_ID")?? "dummy-project-id";
+var apiKey = Environment.GetEnvironmentVariable("API_KEY")?? "dummy-api-key";
+var authDomain = Environment.GetEnvironmentVariable("AUTHDOMAIN")?? "dummy-auth-domain";
 builder.Services.AddSingleton(new FirebaseAuthClient(new FirebaseAuthConfig
 {
     ApiKey =apiKey,
@@ -192,10 +196,13 @@ builder.Services.AddScoped<ICorrelationContext, HttpCorrelationContext>();
 builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
 
 var app = builder.Build();
-var minioClient = app.Services.GetRequiredService<IMinioClient>();
-var bucket = Environment.GetEnvironmentVariable("MINIO_BUCKET");
-if (!await minioClient.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket)))
-    await minioClient.MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket));
+if (!builder.Environment.IsEnvironment("Testing"))//This breaks the app on startup if minio is not able to be accessed. Minio can only be accessed on my machine, so I added the condition so it doesn't trigger during testing so anyone can run the tests.
+{
+    var minioClient = app.Services.GetRequiredService<IMinioClient>();
+    var bucket = Environment.GetEnvironmentVariable("MINIO_BUCKET");
+    if (!await minioClient.BucketExistsAsync(new BucketExistsArgs().WithBucket(bucket)))
+        await minioClient.MakeBucketAsync(new MakeBucketArgs().WithBucket(bucket));
+}
 
 app.UseMiddleware<IdCorrelationMiddleware>();
 app.UseRequestLocalization();
@@ -226,7 +233,8 @@ RecurringJob.AddOrUpdate<ExpiryDateCheckJob>(
     job => job.ExecuteAsync(CancellationToken.None),
     cron);
 
-if (app.Environment.IsDevelopment())
+//When "app.Environment.IsEnvironment("Testing")" Is true during testing "app.Environment.IsDevelopment()" is False. Without the change to the condition swagger will always fail to open.
+if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing")) 
 {
     app.UseSwagger();
     app.UseSwaggerUI();
@@ -236,3 +244,4 @@ app.MapRazorPages();
 app.MapControllers();
 
 app.Run();
+public partial class Program;
