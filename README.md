@@ -562,3 +562,27 @@ GET`/api/suppliers/{id}/documents/{documentId}`: ApiUser access. Download a supp
 - **DLQ Topology:** I configured a Dead-Letter Exchange (`warehouse.events.dlx`) and Dead-Letter Queue (`notifications.warehouse-events.dlq`) upon queue declaration.
 - **Exponential Backoff:** The consumer implements an in-process retry loop that retries failed messages with an exponentially increasing delay.
 - **Dead-Lettering:** Once all retries are exhausted the message is routed to the DLQ for manual inspection.
+
+## Session 09 Lab - Unit Testing & Integration Testing
+
+### 1. Test Project Setup
+
+- **Two new projects under tests/**: Warehouse.Api.UnitTests and Warehouse.Api.IntegrationTests.
+- **Test utilities**: ProductBuilder, SupplierBuilder in /Builders for building domain entities in Arrange steps, and RecordingResponseFeature, MultipartFormHelper, FakeEventPublisher, InMemoryFileStorage, TestAuthHandler, TestPolicyEvaluator in /Helpers 
+
+### 2. Unit Tests
+
+- **ProductService**: create (valid, duplicate SKU, generated ID/date), search (by name, by supplier, both filters, empty filters), quantity update (valid, negative, timestamp), price update (valid/invalid via `[Theory]`), archive (marks archived, stays queryable), image upload (jpg, png, invalid extension, invalid content type, oversized).
+- **SupplierService**: create, deactivate, assign-to-product .
+- **Middleware**: `RequestTimingMiddleware` — header is set, warning is logged on slow requests, no warning on fast ones. All mocked with Moq, no real Postgres/Redis/MinIO/RabbitMQ involved.
+
+### 3. Integration Tests
+
+- **CustomWebApplicationFactory** boots the real Program.cs pipeline under a Testing environment and swaps: Postgres → EF Core InMemory, Redis-backed IDistributedCache → in-memory cache, IEventPublisher → a no-op fake, IFileStorage → an in-memory fake. This means the whole integration suite runs with zero external services.
+- **Auth in tests**: TestAuthHandler + TestPolicyEvaluator replace real Firebase JWT validation so `[Authorize]`-protected endpoints can be exercised without a real token. Authorization is currently short-circuited to always succeed in tests, so these tests validate business logic through the pipeline but don't currently catch a broken AdminOnly/ApiUser policy.
+- **Endpoints covered**: Products (GET all/by id/404/search, POST create/duplicate-409, quantity & price updates, DELETE/archive), Suppliers (create, get, deactivate, assign-to-product), image upload (jpg/png accepted, txt rejected, oversized rejected), Swagger (`/swagger/v1/swagger.json`), and one full lifecycle test chaining supplier creation through product archiving in a single scenario.
+
+### 4. Bonus — Code Coverage & CI
+
+- **Coverage**: coverlet.runsettings producing Cobertura.
+- **GitHub Actions**: .github/workflows/ci.yml restores, builds, and runs the full test suite on every push/PR.
