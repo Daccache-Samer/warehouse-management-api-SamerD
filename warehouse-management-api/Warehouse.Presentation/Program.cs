@@ -190,6 +190,10 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICorrelationContext, HttpCorrelationContext>();
 
 builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
+builder.Services.AddOptions<RabbitMqSettings>()
+    .Bind(builder.Configuration.GetSection(RabbitMqSettings.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 
 var app = builder.Build();
 var minioClient = app.Services.GetRequiredService<IMinioClient>();

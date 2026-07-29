@@ -1,18 +1,15 @@
 ﻿using System.Text.Json;
+using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
 using Warehouse.DomainWarehouse.Domain.Common;
 
 namespace Warehouse.Infrastructure.Messaging;
 
-public sealed class RabbitMqEventPublisher(IConfiguration configuration, ILogger<RabbitMqEventPublisher> logger)
+public sealed class RabbitMqEventPublisher(IOptions<RabbitMqSettings> settings, ILogger<RabbitMqEventPublisher> logger)
     : IEventPublisher, IAsyncDisposable
 {
-    private readonly string _hostName = configuration["RabbitMq:HostName"] ?? "localhost";
-    private readonly int _port = configuration.GetValue("RabbitMq:Port", 5672);
-    private readonly string _userName = configuration["RabbitMq:UserName"] ?? "warehouse";
-    private readonly string _password = configuration["RabbitMq:Password"] ?? "warehouse";
-    private readonly string _virtualHost = configuration["RabbitMq:VirtualHost"] ?? "/";
-    private readonly string _exchangeName = configuration["RabbitMq:ExchangeName"] ?? "warehouse.events";
+    private readonly RabbitMqSettings _settings = settings.Value;
+   
 
     private readonly SemaphoreSlim _connectLock = new(1, 1);
     private IConnection? _connection;
@@ -28,7 +25,7 @@ public sealed class RabbitMqEventPublisher(IConfiguration configuration, ILogger
             var body = JsonSerializer.SerializeToUtf8Bytes(integrationEvent);
             var props = new BasicProperties { ContentType = "application/json", DeliveryMode = (DeliveryModes)2 };
 
-            await channel.BasicPublishAsync(_exchangeName, routingKey, mandatory: false, basicProperties: props, body: body, cancellationToken: ct);
+            await channel.BasicPublishAsync(_settings.ExchangeName, routingKey, mandatory: false, basicProperties: props, body: body, cancellationToken: ct);
         }
         catch (Exception ex)
         {
@@ -48,14 +45,14 @@ public sealed class RabbitMqEventPublisher(IConfiguration configuration, ILogger
 
             var factory = new ConnectionFactory
             {
-                HostName = _hostName, Port = _port, UserName = _userName, Password = _password,
-                VirtualHost = _virtualHost, AutomaticRecoveryEnabled = true,
+                HostName = _settings.HostName, Port = _settings.Port, UserName = _settings.UserName, Password = _settings.Password,
+                VirtualHost = _settings.VirtualHost, AutomaticRecoveryEnabled = true,
                 ClientProvidedName = "warehouse-api-publisher"
             };
 
             _connection = await factory.CreateConnectionAsync();
             _channel = await _connection.CreateChannelAsync();
-            await _channel.ExchangeDeclareAsync(_exchangeName, ExchangeType.Topic, durable: true, autoDelete: false);
+            await _channel.ExchangeDeclareAsync(_settings.ExchangeName, ExchangeType.Topic, durable: true, autoDelete: false);
 
             return _channel;
         }
