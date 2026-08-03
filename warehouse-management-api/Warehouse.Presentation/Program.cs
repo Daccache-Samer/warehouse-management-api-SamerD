@@ -27,7 +27,9 @@ using dotenv.net;
 using Microsoft.AspNetCore.Authorization;
 using Minio;
 using Minio.DataModel.Args;
+using warehouse_management_api.Common;
 using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.Infrastructure.Messaging;
 
 DotEnv.Load();
 
@@ -183,6 +185,15 @@ builder.Services.AddAuthorizationBuilder()
         .RequireRole("admin"));
 
 builder.Services.AddSession();
+
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICorrelationContext, HttpCorrelationContext>();
+
+builder.Services.AddSingleton<IEventPublisher, RabbitMqEventPublisher>();
+builder.Services.AddOptions<RabbitMqSettings>()
+    .Bind(builder.Configuration.GetSection(RabbitMqSettings.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 
 var app = builder.Build();
 var minioClient = app.Services.GetRequiredService<IMinioClient>();

@@ -1,4 +1,5 @@
 ﻿using MediatR;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Warehouse.Application.InventoryDashboard.ViewModels;
 using Warehouse.DomainWarehouse.Domain.Products;
@@ -7,25 +8,26 @@ using Warehouse.DomainWarehouse.Domain.Suppliers;
 namespace Warehouse.Application.InventoryDashboard.Queries;
 
 public class GetInventoryDashboardHandler(
-    IProductRepository productRepository, ISupplierRepository supplierRepository,ILogger<GetInventoryDashboardHandler> logger)
+    IProductRepository productRepository, ISupplierRepository supplierRepository,ILogger<GetInventoryDashboardHandler> logger,
+    IConfiguration configuration)
     : IRequestHandler<GetInventoryDashboardQuery, InventoryDashboardViewModel>
 {
-    private const int LowStockThreshold = 10; 
 
     public async Task<InventoryDashboardViewModel> 
         Handle(GetInventoryDashboardQuery request, CancellationToken cancellationToken)
     {
+        var threshold = configuration.GetValue("WarehouseEvents:LowStockThreshold", 10);
         var totalProducts = await TryGetMetric(() =>
             productRepository.CountAsync(cancellationToken), "TotalProducts");
         var lowStock = await TryGetMetric(() =>
-            productRepository.CountLowStockAsync(LowStockThreshold, cancellationToken),"LowStock");
+            productRepository.CountLowStockAsync(threshold, cancellationToken),"LowStock");
         var totalValue = await TryGetMetric(() =>
             productRepository.GetTotalInventoryValueAsync(cancellationToken),"TotalValue");
         var activeSuppliers = await TryGetMetric(() =>
             supplierRepository.CountActiveSuppliersAsync(cancellationToken),"ActiveSuppliers");
 
         return new InventoryDashboardViewModel(
-            totalProducts,  lowStock, LowStockThreshold, totalValue, activeSuppliers, DateTime.UtcNow);
+            totalProducts,  lowStock, threshold, totalValue, activeSuppliers, DateTime.UtcNow);
     }
             
 

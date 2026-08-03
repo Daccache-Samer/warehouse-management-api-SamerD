@@ -3,13 +3,16 @@ using MediatR;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
 using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
 using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Application.Products.Commands.CreateProduct;
 
 public class CreateProductHandler(
-    IProductRepository productRepository, IMapper mapper,ILogger<CreateProductHandler> logger,IDistributedCache cache)
+    IProductRepository productRepository, IMapper mapper,ILogger<CreateProductHandler> logger,IDistributedCache cache
+    ,IEventPublisher eventPublisher,ICorrelationContext correlationContext)
     : IRequestHandler<CreateProductCommand, ProductViewModel>
 {
     public async Task<ProductViewModel> Handle(CreateProductCommand request, CancellationToken cancellationToken)
@@ -30,6 +33,21 @@ public class CreateProductHandler(
 
         await productRepository.AddAsync(product, cancellationToken);
         await cache.RemoveAsync("ListProductsHandler_ListProductsQuery",cancellationToken);
+        await eventPublisher.PublishAsync(
+            new ProductCreatedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.ProductCreated,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Info",
+                Sku = product.SKU,
+                ProductName = product.Name,
+                Price = product.Price,
+                InitialQuantity = product.QuantityInStock
+            },
+            EventTypes.ProductCreated,
+            cancellationToken);
         logger.LogInformation(
             "Product created: {ProductId} {Sku} {Name} at price {Price}",
             product.Id, product.SKU, product.Name, product.Price);
