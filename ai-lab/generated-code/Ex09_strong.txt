@@ -1,0 +1,354 @@
+﻿Create ASP.NET Core endpoint for warehouse products using controller-service pattern, DTO 
+validation, unit tests, integration tests, and Swagger summary.
+
+
+response:
+This complete ASP.NET Core solution for managing warehouse products includes the domain entities, DTOs with validation, service abstraction, controller with Swagger documentation, unit tests, and integration tests.
+
+## 1. Domain Entities & DTOs
+
+```csharp
+using System.ComponentModel.DataAnnotations;
+
+namespace WarehouseApi.DTOs;
+
+public record ProductResponse(
+    Guid Id,
+    string SKU,
+    string Name,
+    decimal Price,
+    int QuantityInStock,
+    DateTime CreatedAtUtc
+);
+
+public record CreateProductRequest
+{
+    [Required(ErrorMessage = "SKU is required.")]
+    [StringLength(30, MinimumLength = 3, ErrorMessage = "SKU must be between 3 and 30 characters.")]
+    [RegularExpression(@"^[A-Z0-9-]+$", ErrorMessage = "SKU must contain only uppercase letters, numbers, and hyphens.")]
+    public string SKU { get; init; } = string.Empty;
+
+    [Required(ErrorMessage = "Product name is required.")]
+    [StringLength(100, MinimumLength = 2, ErrorMessage = "Name must be between 2 and 100 characters.")]
+    public string Name { get; init; } = string.Empty;
+
+    [Range(0.01, 1000000.00, ErrorMessage = "Price must be between 0.01 and 1,000,000.00.")]
+    public decimal Price { get; init; }
+
+    [Range(0, int.MaxValue, ErrorMessage = "Stock quantity cannot be negative.")]
+    public int QuantityInStock { get; init; }
+}
+
+```
+
+```csharp
+namespace WarehouseApi.Models;
+
+public class Product
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string SKU { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public decimal Price { get; set; }
+    public int QuantityInStock { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+```
+
+---
+
+## 2. Service Layer
+
+```csharp
+using WarehouseApi.DTOs;
+using WarehouseApi.Models;
+
+namespace WarehouseApi.Services;
+
+public interface IProductService
+{
+    Task<ProductResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
+    Task<ProductResponse> CreateAsync(CreateProductRequest request, CancellationToken cancellationToken = default);
+}
+
+public class ProductService : IProductService
+{
+    // In-memory store for demonstration; replace with DbContext in production
+    private static readonly Dictionary<Guid, Product> Products = new();
+
+    public Task<ProductResponse?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (!Products.TryGetValue(id, out var product))
+        {
+            return Task.FromResult<ProductResponse?>(null);
+        }
+
+        var response = new ProductResponse(
+            product.Id,
+            product.SKU,
+            product.Name,
+            product.Price,
+            product.QuantityInStock,
+            product.CreatedAtUtc
+        );
+
+        return Task.FromResult<ProductResponse?>(response);
+    }
+
+    public Task<ProductResponse> CreateAsync(CreateProductRequest request, CancellationToken cancellationToken = default)
+    {
+        var product = new Product
+        {
+            SKU = request.SKU,
+            Name = request.Name,
+            Price = request.Price,
+            QuantityInStock = request.QuantityInStock
+        };
+
+        Products[product.Id] = product;
+
+        var response = new ProductResponse(
+            product.Id,
+            product.SKU,
+            product.Name,
+            product.Price,
+            product.QuantityInStock,
+            product.CreatedAtUtc
+        );
+
+        return Task.FromResult(response);
+    }
+}
+
+```
+
+---
+
+## 3. Controller Layer & Swagger Annotations
+
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using WarehouseApi.DTOs;
+using WarehouseApi.Services;
+
+namespace WarehouseApi.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+[Produces("application/json")]
+public class ProductsController : ControllerBase
+{
+    private readonly IProductService _productService;
+
+    public ProductsController(IProductService productService)
+    {
+        _productService = productService;
+    }
+
+    /// <summary>
+    /// Retrieves a warehouse product by its unique identifier.
+    /// </summary>
+    [HttpGet("{id:guid}")]
+    [EndpointSummary("Get product by ID")]
+    [EndpointDescription("Returns detailed information about a specific warehouse product using its GUID.")]
+    [ProducesResponseType(typeof(ProductResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<ProductResponse>> GetById(Guid id, CancellationToken cancellationToken)
+    {
+        var product = await _productService.GetByIdAsync(id, cancellationToken);
+        if (product is null)
+        {
+            return NotFound(new { Message = $"Product with ID '{id}' was not found." });
+        }
+
+        return Ok(product);
+    }
+
+    /// <summary>
+    /// Creates a new warehouse product item.
+    /// </summary>
+    [HttpPost]
+    [EndpointSummary("Create a new product")]
+    [EndpointDescription("Validates input DTO data and creates a new inventory product entry.")]
+    [ProducesResponseType(typeof(ProductResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<ProductResponse>> Create([FromBody] CreateProductRequest request, CancellationToken cancellationToken)
+    {
+        var createdProduct = await _productService.CreateAsync(request, cancellationToken);
+
+        return CreatedAtAction(
+            nameof(GetById),
+            new { id = createdProduct.Id },
+            createdProduct
+        );
+    }
+}
+
+```
+
+---
+
+## 4. Unit Tests (xUnit & Moq)
+
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using Moq;
+using WarehouseApi.Controllers;
+using WarehouseApi.DTOs;
+using WarehouseApi.Services;
+using Xunit;
+
+namespace WarehouseApi.Tests.Unit;
+
+public class ProductsControllerTests
+{
+    private readonly Mock<IProductService> _serviceMock = new();
+    private readonly ProductsController _controller;
+
+    public ProductsControllerTests()
+    {
+        _controller = new ProductsController(_serviceMock.Object);
+    }
+
+    [Fact]
+    public async Task GetById_WhenProductExists_Returns200OkWithProduct()
+    {
+        // Arrange
+        var productId = Guid.NewGuid();
+        var expectedResponse = new ProductResponse(productId, "WH-1001", "Steel Pallet", 149.99m, 50, DateTime.UtcNow);
+
+        _serviceMock
+            .Setup(s => s.GetByIdAsync(productId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expectedResponse);
+
+        // Act
+        var result = await _controller.GetById(productId, CancellationToken.None);
+
+        // Assert
+        var okResult = Assert.IsType<OkObjectResult>(result.Result);
+        var actualProduct = Assert.IsType<ProductResponse>(okResult.Value);
+        Assert.Equal(expectedResponse.SKU, actualProduct.SKU);
+    }
+
+    [Fact]
+    public async Task GetById_WhenProductDoesNotExist_Returns404NotFound()
+    {
+        // Arrange
+        var productId = Guid.NewGuid();
+        _serviceMock
+            .Setup(s => s.GetByIdAsync(productId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ProductResponse?)null);
+
+        // Act
+        var result = await _controller.GetById(productId, CancellationToken.None);
+
+        // Assert
+        Assert.IsType<NotFoundObjectResult>(result.Result);
+    }
+
+    [Fact]
+    public async Task Create_WithValidRequest_Returns201Created()
+    {
+        // Arrange
+        var request = new CreateProductRequest
+        {
+            SKU = "WH-2002",
+            Name = "Forklift Battery",
+            Price = 1200.00m,
+            QuantityInStock = 5
+        };
+
+        var createdResponse = new ProductResponse(
+            Guid.NewGuid(),
+            request.SKU,
+            request.Name,
+            request.Price,
+            request.QuantityInStock,
+            DateTime.UtcNow
+        );
+
+        _serviceMock
+            .Setup(s => s.CreateAsync(request, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(createdResponse);
+
+        // Act
+        var result = await _controller.Create(request, CancellationToken.None);
+
+        // Assert
+        var createdResult = Assert.IsType<CreatedAtActionResult>(result.Result);
+        Assert.Equal(StatusCodes.Status201Created, createdResult.StatusCode);
+        Assert.Equal(createdResponse, createdResult.Value);
+    }
+}
+
+```
+
+---
+
+## 5. Integration Tests (xUnit & WebApplicationFactory)
+
+```csharp
+using System.Net;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Mvc.Testing;
+
+using WarehouseApi.DTOs;
+using Xunit;
+
+namespace WarehouseApi.Tests.Integration;
+
+public class ProductsApiIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+{
+    private readonly HttpClient _client;
+
+    public ProductsApiIntegrationTests(WebApplicationFactory<Program> factory)
+    {
+        _client = factory.CreateClient();
+    }
+
+    [Fact]
+    public async Task CreateProduct_WithValidPayload_Returns201AndProductDetails()
+    {
+        // Arrange
+        var request = new CreateProductRequest
+        {
+            SKU = "BOX-500",
+            Name = "Heavy Duty Shipping Box",
+            Price = 4.50m,
+            QuantityInStock = 500
+        };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/products", request);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+
+        var responseData = await response.Content.ReadFromJsonAsync<ProductResponse>();
+        Assert.NotNull(responseData);
+        Assert.NotEqual(Guid.Empty, responseData.Id);
+        Assert.Equal("BOX-500", responseData.SKU);
+    }
+
+    [Fact]
+    public async Task CreateProduct_WithInvalidPayload_Returns400BadRequest()
+    {
+        // Arrange: Missing SKU and negative price violates DTO attributes
+        var invalidRequest = new CreateProductRequest
+        {
+            SKU = "",
+            Name = "X",
+            Price = -10.00m,
+            QuantityInStock = -5
+        };
+
+        // Act
+        var response = await _client.PostAsJsonAsync("/api/products", invalidRequest);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+}
+
+```

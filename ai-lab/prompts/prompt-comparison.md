@@ -1,0 +1,3 @@
+﻿The first weak prompt's output is very bad. First it picked a random programming  language which does not conform to what I am using. second it only generated a couple of endpoints, no entities, no DTO's, no tests. It didn't even separate the generated code into different files.
+
+The strong prompt's output on the other hand was a lot more detailed and organized. It generated domain entities and DTO's first. It split the endpoints logic into two layers, service and controller. It generated unit tests and integration tests to test the endpoints easily. And it generated everything using the same language and naming conventions. 
