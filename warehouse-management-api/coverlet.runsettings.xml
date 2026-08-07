@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+    <RunConfiguration>
+        <ResultsDirectory>./TestResults</ResultsDirectory>
+    </RunConfiguration>
+    <DataCollectionRunSettings>
+        <DataCollectors>
+            <DataCollector friendlyName="XPlat code coverage">
+                <Configuration>
+                    <Format>cobertura</Format>
+                    <Include>[Warehouse.Domain]*,[Warehouse.Application]*,[warehouse_management_api]*</Include>
+                    <ExcludeByFile>**/Migrations/**/*.cs</ExcludeByFile>
+                    <Exclude>[*]*.Contracts.*,[*]*.ViewModels.*,[warehouse_management_api]Program</Exclude>
+                </Configuration>
+            </DataCollector>
+        </DataCollectors>
+    </DataCollectionRunSettings>
+</RunSettings>

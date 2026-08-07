@@ -24,6 +24,11 @@ public class GetProductByIdHandler(
         }
         var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
             ??  throw new NotFoundException($"Product with ID '{request.ProductId}' not found.");
+        // Added this to check if a product is archived before retrieving it.
+        if (product.IsArchived)
+        {
+            throw new NotFoundException($"Product with ID '{request.ProductId}' not found.");
+        }
         var viewModel = mapper.Map<ProductViewModel>(product);
         await distributedCache.SetStringAsync(
             cacheKey,
