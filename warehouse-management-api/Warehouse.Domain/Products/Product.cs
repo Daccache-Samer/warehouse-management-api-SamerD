@@ -86,6 +86,17 @@ public class Product
         IsArchived = true;
         LastUpdatedAt = DateTime.UtcNow;
     }
+    
+    public IReadOnlyList<ProductImage> ClearImages()
+    {
+        if (_images.Count == 0)
+            return Array.Empty<ProductImage>();
+
+        var removed = _images.ToList();
+        _images.Clear();
+        LastUpdatedAt = DateTime.UtcNow;
+        return removed;
+    }
 
     public void AssignSupplier(Supplier supplier)
     {
