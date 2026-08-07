@@ -1,5 +1,4 @@
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Warehouse.Api.UnitTests.TestUtilities.Builders;
@@ -13,7 +12,6 @@ public class ArchiveProduct
 {
     private readonly Mock<IProductRepository> _productRepositoryMock = new();
     private readonly Mock<IFileStorage> _fileStorageMock = new();
-    private readonly Mock<IDistributedCache> _cacheMock = new();
     private readonly ArchiveProductHandler _handler;
 
     public ArchiveProduct()
@@ -23,8 +21,7 @@ public class ArchiveProduct
         _handler = new ArchiveProductHandler(
             _productRepositoryMock.Object,
             _fileStorageMock.Object,
-            loggerMock.Object,
-            _cacheMock.Object);
+            loggerMock.Object);
     }
 
     [Fact]
@@ -49,12 +46,13 @@ public class ArchiveProduct
 
         // Assert
         capturedProduct.Should().NotBeNull();
-        capturedProduct!.IsArchived.Should().BeTrue();
+        capturedProduct.IsArchived.Should().BeTrue();
 
         _productRepositoryMock.Verify(repo => repo.UpdateAsync(
             It.Is<Product>(p => p.IsArchived), It.IsAny<CancellationToken>()), Times.Once);
-        _cacheMock.Verify(cache => cache.RemoveAsync(
-            $"GetProductByIdQuery-{product.Id}", It.IsAny<CancellationToken>()), Times.Once);
+
+        // Cache eviction is no longer this handler's concern — it now happens in
+        // ProductCacheInvalidationBehavior. See ProductCacheInvalidationBehaviorTests.
 
         // This product had no images, so nothing should have hit blob storage.
         _fileStorageMock.Verify(fs => fs.DeleteAsync(

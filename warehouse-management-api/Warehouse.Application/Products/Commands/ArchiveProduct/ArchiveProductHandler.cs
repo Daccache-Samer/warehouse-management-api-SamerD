@@ -1,5 +1,4 @@
 ﻿using MediatR;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Warehouse.Application.Exceptions;
 using Warehouse.DomainWarehouse.Domain.Common;
@@ -10,8 +9,7 @@ namespace Warehouse.Application.Products.Commands.ArchiveProduct;
 public class ArchiveProductHandler(
     IProductRepository productRepository,
     IFileStorage fileStorage,
-    ILogger<ArchiveProductHandler> logger,
-    IDistributedCache cache)
+    ILogger<ArchiveProductHandler> logger)
     : IRequestHandler<ArchiveProductCommand>
 {
     public async Task Handle(ArchiveProductCommand request, CancellationToken cancellationToken)
@@ -46,9 +44,6 @@ public class ArchiveProductHandler(
                     image.ObjectKey, product.Id);
             }
         }
-
-        await cache.RemoveAsync($"GetProductByIdQuery-{product.Id}", cancellationToken);
-        await cache.RemoveAsync("ListProductsHandler_ListProductsQuery", cancellationToken);
 
         logger.LogInformation(
             "Product archived: {ProductId} {Sku}, {ImageCount} associated image(s) cascaded for deletion.",

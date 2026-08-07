@@ -1,24 +1,21 @@
 ﻿using AutoMapper;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Distributed;
 using Moq;
 using Warehouse.Application.Products.Commands.AssignSupplierToProduct;
 using Warehouse.DomainWarehouse.Domain.Exceptions;
 using Warehouse.DomainWarehouse.Domain.Products;
 using Warehouse.DomainWarehouse.Domain.Suppliers;
-using Xunit;
 
-namespace Warehouse.Api.UnitTests.Products.Commands;
+namespace Warehouse.Api.UnitTests.ProductService;
 
 public class AssignSupplierToProductHandlerTests
 {
     private readonly Mock<IProductRepository> _productRepository = new();
     private readonly Mock<ISupplierRepository> _supplierRepository = new();
     private readonly Mock<IMapper> _mapper = new();
-    private readonly Mock<IDistributedCache> _cache = new();
 
     private AssignSupplierToProductHandler CreateSut() =>
-        new(_productRepository.Object, _supplierRepository.Object, _mapper.Object, _cache.Object);
+        new(_productRepository.Object, _supplierRepository.Object, _mapper.Object);
 
     [Fact]
     public async Task Handle_ArchivedProduct_ThrowsDomainException_AndDoesNotPersist()
@@ -49,7 +46,9 @@ public class AssignSupplierToProductHandlerTests
 
         _productRepository.Verify(
             r => r.UpdateAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Never);
-        _cache.Verify(
-            c => c.RemoveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // Cache eviction assertion removed — invalidation now lives in
+        // ProductCacheInvalidationBehavior, which never runs here anyway since
+        // it only fires after a successful next() and the handler throws first.
     }
 }

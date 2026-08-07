@@ -9,4 +9,7 @@ public record CreateProductCommand(
     string Description,
     decimal Price,
     int QuantityInStock,
-    DateTime ExpiryDate) : IRequest<ProductViewModel>;
+    DateTime ExpiryDate) : IRequest<ProductViewModel>, IInvalidatesProductCache
+{
+public string? ProductId => null;
+}

@@ -1,0 +1,1098 @@
+﻿namespace Warehouse.Application.Products;
+
+/// <summary>
+/// Implemented by commands that trigger product cache invalidation after a successful write.
+/// ProductId is null for commands where no "by id" entry could exist yet (e.g. creation).
+/// </summary>
+public interface IInvalidatesProductCache
+{
+    string? ProductId { get; }
+}
+
+using MediatR;
+using Microsoft.Extensions.Caching.Distributed;
+
+namespace Warehouse.Application.Common.Behaviors;
+
+public class ProductCacheInvalidationBehavior<TRequest, TResponse>(IDistributedCache cache)
+    : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull, IInvalidatesProductCache
+{
+    public async Task<TResponse> Handle(
+        TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
+    {
+        var response = await next();
+
+        // NOTE: these string literals intentionally do not match ProductCacheKeys.ById/List
+        // (which ignore their parameters). This is a known, pre-existing bug — invalidation
+        // is currently a no-op. Preserved as-is per decision; see ProductCacheKeys.cs.
+        if (request.ProductId is not null)
+        {
+            await cache.RemoveAsync($"GetProductByIdQuery-{request.ProductId}", cancellationToken);
+        }
+        await cache.RemoveAsync("ListProductsHandler_ListProductsQuery", cancellationToken);
+
+        return response;
+    }
+}
+
+using Microsoft.Extensions.Configuration;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products;
+
+public interface ILowStockNotifier
+{
+    Task NotifyIfCrossedThresholdAsync(Product product, int previousQuantity, CancellationToken cancellationToken);
+}
+
+public class LowStockNotifier(
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext, IConfiguration configuration)
+    : ILowStockNotifier
+{
+    public async Task NotifyIfCrossedThresholdAsync(
+        Product product, int previousQuantity, CancellationToken cancellationToken)
+    {
+        var threshold = configuration.GetValue("WarehouseEvents:LowStockThreshold", 10);
+        if (!StockThresholdPolicy.CrossedIntoLowStock(previousQuantity, product.QuantityInStock, threshold))
+        {
+            return;
+        }
+
+        await eventPublisher.PublishAsync(
+            new StockLowDetectedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.StockLow,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Warning",
+                Sku = product.SKU,
+                ProductName = product.Name,
+                CurrentQuantity = product.QuantityInStock,
+                Threshold = threshold
+            },
+            EventTypes.StockLow,
+            cancellationToken);
+    }
+}
+
+// AddProductImageCommand — already has ProductId, just add the interface
+public record AddProductImageCommand(string ProductId, Stream Content, string FileName, long Length, string ContentType)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// AdjustProductStockCommand
+public record AdjustProductStockCommand(string ProductId, StockAdjustmentType AdjustmentType, int Quantity, string? Reason)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// ArchiveProductCommand
+public record ArchiveProductCommand(string ProductId) : IRequest, IInvalidatesProductCache;
+
+// AssignSupplierToProductCommand
+public record AssignSupplierToProductCommand(string ProductId, string SupplierId)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// UpdateProductPriceCommand
+public record UpdateProductPriceCommand(string ProductId, decimal Price)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// UpdateProductQuantityCommand
+public record UpdateProductQuantityCommand(string ProductId, int QuantityInStock)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// CreateProductCommand — no ProductId (product doesn't exist yet), explicit null
+public record CreateProductCommand(string Name, string SKU, string Description, decimal Price, int QuantityInStock, DateTime ExpiryDate)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache
+{
+    public string? ProductId => null;
+}
+
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.AddProductImage;
+
+public class AddProductImageHandler(
+    IProductRepository productRepository, IFileStorage fileStorage, IMapper mapper,
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext)
+    : IRequestHandler<AddProductImageCommand, ProductViewModel>
+{
+    private static readonly string[] AllowedExtensions = [".jpg", ".jpeg", ".png"];
+    private static readonly string[] AllowedContentTypes = ["image/jpeg", "image/png"];
+    private const long MaxSizeBytes = 2 * 1024 * 1024; // 2 MB
+
+    public async Task<ProductViewModel> Handle(AddProductImageCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        var extension = Path.GetExtension(request.FileName).ToLowerInvariant();
+        if (!AllowedExtensions.Contains(extension))
+        {
+            throw new ValidationException("Only .jpg, .jpeg, and .png files are allowed.");
+        }
+
+        if (!AllowedContentTypes.Contains(request.ContentType))
+        {
+            throw new ValidationException("File content type must be image/jpeg or image/png.");
+        }
+
+        if (request.Length > MaxSizeBytes)
+        {
+            throw new ValidationException("File size must not exceed 2 MB.");
+        }
+
+        var result = await fileStorage.UploadAsync(
+            "products", product.Id, request.Content, request.FileName, request.ContentType, ct: cancellationToken);
+
+        var image = ProductImage.Create(product.Id, result.FileName, result.ObjectKey);
+        product.AddImage(image); // throws DomainException if product archived
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        await eventPublisher.PublishAsync(
+            new WarehouseFileUploadedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.FileUploaded,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Info",
+                FileName = result.FileName,
+                ObjectKey = result.ObjectKey
+            },
+            EventTypes.FileUploaded,
+            cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+
+using AutoMapper;
+using MediatR;
+using Microsoft.Extensions.Logging;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.AdjustProductStock;
+
+public class AdjustProductStockHandler(
+    IProductRepository productRepository, IMapper mapper, ILogger<AdjustProductStockHandler> logger,
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext, ILowStockNotifier lowStockNotifier)
+    : IRequestHandler<AdjustProductStockCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(AdjustProductStockCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        var previousQuantity = product.QuantityInStock;
+        var delta = request.AdjustmentType == StockAdjustmentType.Increase ? request.Quantity : -request.Quantity;
+        product.AdjustQuantity(delta);
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        logger.LogInformation(
+            "Stock adjusted: {ProductId} {Sku} {AdjustmentType} {Delta} -> new quantity {NewQuantity}. Reason: {Reason}",
+            product.Id, product.SKU, request.AdjustmentType, delta, product.QuantityInStock, request.Reason ?? "n/a");
+
+        await eventPublisher.PublishAsync(
+            new StockAdjustedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.StockAdjusted,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Info",
+                Sku = product.SKU,
+                ProductName = product.Name,
+                AdjustmentType = request.AdjustmentType.ToString(),
+                Delta = delta,
+                NewQuantity = product.QuantityInStock,
+                Reason = request.Reason
+            },
+            EventTypes.StockAdjusted,
+            cancellationToken);
+
+        await lowStockNotifier.NotifyIfCrossedThresholdAsync(product, previousQuantity, cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+
+using MediatR;
+using Microsoft.Extensions.Logging;
+using Warehouse.Application.Exceptions;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.ArchiveProduct;
+
+public class ArchiveProductHandler(
+    IProductRepository productRepository,
+    IFileStorage fileStorage,
+    ILogger<ArchiveProductHandler> logger)
+    : IRequestHandler<ArchiveProductCommand>
+{
+    public async Task Handle(ArchiveProductCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        // Detach images first so the removal is captured by EF's change tracker
+        // on the same tracked instance that UpdateAsync will persist.
+        var removedImages = product.ClearImages();
+        product.Archive();
+
+        // Single DB transaction: archives the product and deletes the
+        // now-orphaned ProductImage rows (required FK relationship ->
+        // EF marks them Deleted when removed from the collection).
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        // Blob cleanup happens after the DB commit succeeds, and failures
+        // here are logged but non-fatal: an orphaned blob is an acceptable
+        // outcome, a product archived-in-DB-but-500-to-the-client is not.
+        foreach (var image in removedImages)
+        {
+            try
+            {
+                await fileStorage.DeleteAsync(image.ObjectKey, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Failed to delete blob {ObjectKey} for archived product {ProductId}; DB record was removed regardless.",
+                    image.ObjectKey, product.Id);
+            }
+        }
+
+        logger.LogInformation(
+            "Product archived: {ProductId} {Sku}, {ImageCount} associated image(s) cascaded for deletion.",
+            product.Id, product.SKU, removedImages.Count);
+    }
+}
+
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Products;
+using Warehouse.DomainWarehouse.Domain.Suppliers;
+
+namespace Warehouse.Application.Products.Commands.AssignSupplierToProduct;
+
+public class AssignSupplierToProductHandler(
+    IProductRepository productRepository, ISupplierRepository supplierRepository, IMapper mapper)
+    : IRequestHandler<AssignSupplierToProductCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(AssignSupplierToProductCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        var supplier = await supplierRepository.GetByIdAsync(request.SupplierId, cancellationToken)
+                       ?? throw new NotFoundException($"Supplier with id '{request.SupplierId}' was not found.");
+
+        product.AssignSupplier(supplier);
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+
+using AutoMapper;
+using MediatR;
+using Microsoft.Extensions.Logging;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.CreateProduct;
+
+public class CreateProductHandler(
+    IProductRepository productRepository, IMapper mapper, ILogger<CreateProductHandler> logger,
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext)
+    : IRequestHandler<CreateProductCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(CreateProductCommand request, CancellationToken cancellationToken)
+    {
+        var existing = await productRepository.GetBySkuAsync(request.SKU, cancellationToken);
+        if (existing is not null)
+        {
+            throw new ConflictException($"A product with SKU '{request.SKU}' already exists.");
+        }
+
+        var product = Product.Create(
+            request.Name,
+            request.SKU,
+            request.Description,
+            request.Price,
+            request.QuantityInStock,
+            request.ExpiryDate);
+
+        await productRepository.AddAsync(product, cancellationToken);
+
+        await eventPublisher.PublishAsync(
+            new ProductCreatedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.ProductCreated,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Info",
+                Sku = product.SKU,
+                ProductName = product.Name,
+                Price = product.Price,
+                InitialQuantity = product.QuantityInStock
+            },
+            EventTypes.ProductCreated,
+            cancellationToken);
+
+        logger.LogInformation(
+            "Product created: {ProductId} {Sku} {Name} at price {Price}",
+            product.Id, product.SKU, product.Name, product.Price);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.UpdateProductPrice;
+
+public class UpdateProductPriceHandler(IProductRepository productRepository, IMapper mapper)
+    : IRequestHandler<UpdateProductPriceCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(UpdateProductPriceCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        product.UpdatePrice(request.Price);
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.UpdateProductQuantity;
+
+public class UpdateProductQuantityHandler(
+    IProductRepository productRepository, IMapper mapper, ILowStockNotifier lowStockNotifier)
+    : IRequestHandler<UpdateProductQuantityCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(UpdateProductQuantityCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        var previousQuantity = product.QuantityInStock;
+        product.UpdateQuantity(request.QuantityInStock);
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        await lowStockNotifier.NotifyIfCrossedThresholdAsync(product, previousQuantity, cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+
+using System.Text;
+using AutoMapper;
+using FluentAssertions;
+using Moq;
+using Warehouse.Api.UnitTests.TestUtilities.Builders;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.Commands.AddProductImage;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Api.UnitTests.ProductService;
+
+public class AddProductImage
+{
+    private readonly Mock<IProductRepository> _productRepositoryMock = new();
+    private readonly Mock<IFileStorage> _fileStorageMock = new();
+    private readonly Mock<IMapper> _mapperMock = new();
+    private readonly Mock<IEventPublisher> _eventPublisherMock = new();
+
+    private readonly AddProductImageHandler _sut;
+
+    public AddProductImage()
+    {
+        var correlationContextMock = new Mock<ICorrelationContext>();
+        _sut = new AddProductImageHandler(
+            _productRepositoryMock.Object,
+            _fileStorageMock.Object,
+            _mapperMock.Object,
+            _eventPublisherMock.Object,
+            correlationContextMock.Object
+        );
+    }
+
+    [Fact]
+    public async Task Handle_ValidJpgFile_UploadsSuccessfullyAndReturnsViewModel()
+    {
+        // Arrange
+        var productId = Guid.NewGuid().ToString();
+        var product = new ProductBuilder().WithId(productId).Build();
+
+        var stream = new MemoryStream(Encoding.UTF8.GetBytes("fake-image-bytes"));
+        var command = new AddProductImageCommand(
+            productId, stream, "photo.jpg", 1024, "image/jpeg");
+
+        _productRepositoryMock
+            .Setup(repo => repo.GetByIdAsync(productId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        _fileStorageMock.Setup(fs => fs.UploadAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FileStorageResult("photo.jpg", "products/photo.jpg"));
+
+        _mapperMock
+            .Setup(m => m.Map<ProductViewModel>(product))
+            .Returns(new ProductViewModel());
+
+        // Act
+        var result = await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        _fileStorageMock.Verify(fs => fs.UploadAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _productRepositoryMock.Verify(repo =>
+            repo.UpdateAsync(product, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ValidPngFile_UploadsSuccessfullyAndReturnsViewModel()
+    {
+        // Arrange
+        var productId = Guid.NewGuid().ToString();
+        var product = new ProductBuilder().WithId(productId).Build();
+
+        var stream = new MemoryStream(Encoding.UTF8.GetBytes("fake-image-bytes"));
+        var command = new AddProductImageCommand(
+            productId, stream, "photo.png", 1024, "image/png");
+
+        _productRepositoryMock
+            .Setup(repo => repo.GetByIdAsync(productId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        _fileStorageMock.Setup(fs => fs.UploadAsync(
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(),
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new FileStorageResult("photo.png", "products/photo.png"));
+
+        _mapperMock
+            .Setup(m => m.Map<ProductViewModel>(product))
+            .Returns(new ProductViewModel());
+
+        // Act
+        var result = await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        _fileStorageMock.Verify(fs => fs.UploadAsync(
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(),
+            It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+        _productRepositoryMock.Verify(repo =>
+            repo.UpdateAsync(product, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_InvalidExtension_ThrowsValidationException()
+    {
+        // Arrange
+        var command = new AddProductImageCommand(
+            Guid.NewGuid().ToString(), Stream.Null, "document.txt", 1024, "text/plain");
+        _productRepositoryMock
+            .Setup(repo => repo.GetByIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProductBuilder().Build());
+
+        // Act
+        Func<Task> act = async () => await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>()
+            .WithMessage("Only .jpg, .jpeg, and .png files are allowed.");
+    }
+
+    [Fact]
+    public async Task Handle_InvalidContentType_ThrowsValidationException()
+    {
+        // Arrange
+        var command = new AddProductImageCommand(
+            Guid.NewGuid().ToString(), Stream.Null, "photo.jpg", 1024, "application/pdf");
+        _productRepositoryMock
+            .Setup(repo => repo.GetByIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProductBuilder().Build());
+
+        // Act
+        Func<Task> act = async () => await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>()
+            .WithMessage("File content type must be image/jpeg or image/png.");
+    }
+
+    [Fact]
+    public async Task Handle_FileExceedsTwoMegabytes_ThrowsValidationException()
+    {
+        // Arrange
+        const long oversizedLength = 2 * 1024 * 1024 + 1;
+        var command = new AddProductImageCommand(
+            Guid.NewGuid().ToString(), Stream.Null, "photo.jpg", oversizedLength, "image/jpeg");
+        _productRepositoryMock
+            .Setup(repo => repo.GetByIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ProductBuilder().Build());
+
+        // Act
+        Func<Task> act = async () => await _sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<ValidationException>()
+            .WithMessage("File size must not exceed 2 MB.");
+    }
+}
+
+using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Moq;
+using Warehouse.Api.UnitTests.TestUtilities.Builders;
+using Warehouse.Application.Products.Commands.ArchiveProduct;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Api.UnitTests.ProductService;
+
+public class ArchiveProduct
+{
+    private readonly Mock<IProductRepository> _productRepositoryMock = new();
+    private readonly Mock<IFileStorage> _fileStorageMock = new();
+    private readonly ArchiveProductHandler _handler;
+
+    public ArchiveProduct()
+    {
+        var loggerMock = new Mock<ILogger<ArchiveProductHandler>>();
+
+        _handler = new ArchiveProductHandler(
+            _productRepositoryMock.Object,
+            _fileStorageMock.Object,
+            loggerMock.Object);
+    }
+
+    [Fact]
+    public async Task Handle_ValidProduct_MarksArchivedOnlyAndDoesNotDelete()
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var command = new ArchiveProductCommand(product.Id);
+
+        _productRepositoryMock.Setup(repo => repo.GetByIdAsync(
+                product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        Product? capturedProduct = null;
+        _productRepositoryMock.Setup(repo => repo.UpdateAsync(
+                It.IsAny<Product>(), It.IsAny<CancellationToken>()))
+            .Callback<Product, CancellationToken>((p, _) => capturedProduct = p)
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        capturedProduct.Should().NotBeNull();
+        capturedProduct!.IsArchived.Should().BeTrue();
+
+        _productRepositoryMock.Verify(repo => repo.UpdateAsync(
+            It.Is<Product>(p => p.IsArchived), It.IsAny<CancellationToken>()), Times.Once);
+
+        // Cache eviction is no longer this handler's concern — it now happens in
+        // ProductCacheInvalidationBehavior. See ProductCacheInvalidationBehaviorTests.
+
+        // This product had no images, so nothing should have hit blob storage.
+        _fileStorageMock.Verify(fs => fs.DeleteAsync(
+            It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ValidProduct_ArchivedProductRemainsInRepositoryList()
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var command = new ArchiveProductCommand(product.Id);
+
+        _productRepositoryMock.Setup(repo => repo.GetByIdAsync(
+                product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+        _productRepositoryMock.Setup(repo =>
+                repo.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Product> { product });
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+        var allProducts = await _productRepositoryMock.Object.GetAllAsync(CancellationToken.None);
+
+        // Assert
+        allProducts.Should().ContainSingle(p => p.Id == product.Id);
+        allProducts.Single().IsArchived.Should().BeTrue();
+        _productRepositoryMock.Verify(repo => repo.UpdateAsync(
+            It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ProductWithImages_DeletesEachImageBlobAndClearsImageCollection()
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var image1 = ProductImage.Create(product.Id, "front.jpg", "products/p1/aaa-front.jpg");
+        var image2 = ProductImage.Create(product.Id, "back.jpg", "products/p1/bbb-back.jpg");
+        product.AddImage(image1);
+        product.AddImage(image2);
+
+        var command = new ArchiveProductCommand(product.Id);
+
+        _productRepositoryMock.Setup(repo => repo.GetByIdAsync(
+                product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        product.Images.Should().BeEmpty("ClearImages should detach all images from the aggregate");
+
+        _fileStorageMock.Verify(fs => fs.DeleteAsync(
+            "products/p1/aaa-front.jpg", It.IsAny<CancellationToken>()), Times.Once);
+        _fileStorageMock.Verify(fs => fs.DeleteAsync(
+            "products/p1/bbb-back.jpg", It.IsAny<CancellationToken>()), Times.Once);
+
+        _productRepositoryMock.Verify(repo => repo.UpdateAsync(
+            It.Is<Product>(p => p.IsArchived && p.Images.Count == 0),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_BlobDeletionThrows_StillCompletesSuccessfully()
+    {
+        // Arrange: verifies the handler's documented non-fatal behavior —
+        // a storage failure during cascade cleanup must not surface as an
+        // unhandled exception or block the DB-level archive from completing.
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var image = ProductImage.Create(product.Id, "front.jpg", "products/p1/aaa-front.jpg");
+        product.AddImage(image);
+
+        var command = new ArchiveProductCommand(product.Id);
+
+        _productRepositoryMock.Setup(repo => repo.GetByIdAsync(
+                product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+        _fileStorageMock.Setup(fs => fs.DeleteAsync(
+                It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("storage unavailable"));
+
+        // Act
+        var act = async () => await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        await act.Should().NotThrowAsync();
+        _productRepositoryMock.Verify(repo => repo.UpdateAsync(
+            It.Is<Product>(p => p.IsArchived), It.IsAny<CancellationToken>()), Times.Once);
+    }
+}
+
+using AutoMapper;
+using FluentAssertions;
+using Moq;
+using Warehouse.Application.Products.Commands.AssignSupplierToProduct;
+using Warehouse.DomainWarehouse.Domain.Exceptions;
+using Warehouse.DomainWarehouse.Domain.Products;
+using Warehouse.DomainWarehouse.Domain.Suppliers;
+using Xunit;
+
+namespace Warehouse.Api.UnitTests.Products.Commands;
+
+public class AssignSupplierToProductHandlerTests
+{
+    private readonly Mock<IProductRepository> _productRepository = new();
+    private readonly Mock<ISupplierRepository> _supplierRepository = new();
+    private readonly Mock<IMapper> _mapper = new();
+
+    private AssignSupplierToProductHandler CreateSut() =>
+        new(_productRepository.Object, _supplierRepository.Object, _mapper.Object);
+
+    [Fact]
+    public async Task Handle_ArchivedProduct_ThrowsDomainException_AndDoesNotPersist()
+    {
+        // Arrange
+        var product = Product.Create("Widget", "SKU-001", "desc", 10m, 5, DateTime.UtcNow.AddDays(30));
+        product.Archive();
+
+        var supplier = Supplier.Create("Acme", "US", "a@acme.com", "1234567890");
+
+        _productRepository
+            .Setup(r => r.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        _supplierRepository
+            .Setup(r => r.GetByIdAsync(supplier.SupplierId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(supplier);
+
+        var sut = CreateSut();
+        var command = new AssignSupplierToProductCommand(product.Id, supplier.SupplierId);
+
+        // Act
+        Func<Task> act = () => sut.Handle(command, CancellationToken.None);
+
+        // Assert
+        await act.Should().ThrowAsync<DomainException>()
+            .WithMessage("Archived products cannot be updated.");
+
+        _productRepository.Verify(
+            r => r.UpdateAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Never);
+
+        // Cache eviction assertion removed — invalidation now lives in
+        // ProductCacheInvalidationBehavior, which never runs here anyway since
+        // it only fires after a successful next() and the handler throws first.
+    }
+}
+
+using AutoMapper;
+using FluentAssertions;
+using Microsoft.Extensions.Logging;
+using Moq;
+using Warehouse.Api.UnitTests.TestUtilities.Builders;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.Application.Products.Commands.CreateProduct;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Api.UnitTests.ProductService;
+
+public class CreateProduct
+{
+    private readonly Mock<IProductRepository> _productRepositoryMock = new();
+    private readonly Mock<IEventPublisher> _eventPublisherMock = new();
+    private readonly CreateProductHandler _handler;
+
+    public CreateProduct()
+    {
+        var loggerMock = new Mock<ILogger<CreateProductHandler>>();
+        var correlationContextMock = new Mock<ICorrelationContext>();
+
+        var mapperConfig = new MapperConfiguration(cfg =>
+        {
+            cfg.CreateMap<Product, ProductViewModel>();
+        });
+        var mapper = mapperConfig.CreateMapper();
+
+        _handler = new CreateProductHandler(
+            _productRepositoryMock.Object,
+            mapper,
+            loggerMock.Object,
+            _eventPublisherMock.Object,
+            correlationContextMock.Object);
+    }
+
+    [Fact]
+    public async Task Handle_ValidProduct_SucceedsAndReturnsViewModel()
+    {
+        // Arrange
+        var command = new CreateProductCommand(
+            "Test Product", "SKU-123", "Test Desc", 100m, 10, DateTime.UtcNow.AddYears(1));
+        _productRepositoryMock.Setup(repo =>
+                repo.GetBySkuAsync(command.SKU, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Product?)null);
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Name.Should().Be("Test Product");
+        result.SKU.Should().Be("SKU-123");
+
+        _productRepositoryMock.Verify(repo =>
+            repo.AddAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Once);
+        _eventPublisherMock.Verify(pub => pub.PublishAsync(
+            It.IsAny<ProductCreatedEvent>(), EventTypes.ProductCreated,
+            It.IsAny<CancellationToken>()), Times.Once);
+
+        // Cache eviction assertion removed — see ProductCacheInvalidationBehaviorTests
+        // for coverage of the "ListProductsHandler_ListProductsQuery" removal,
+        // including the CreateProductCommand.ProductId => null case.
+    }
+
+    [Fact]
+    public async Task Handle_DuplicateSku_ThrowsConflictException()
+    {
+        // Arrange
+        var command = new CreateProductCommand(
+            "Test Product", "SKU-DUP", "Test Desc", 100m, 10, DateTime.UtcNow.AddYears(1));
+        var existingProduct = new ProductBuilder().WithSku("SKU-DUP").Build();
+
+        _productRepositoryMock.Setup(repo =>
+                repo.GetBySkuAsync(command.SKU, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(existingProduct);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<ConflictException>(() =>
+            _handler.Handle(command, CancellationToken.None));
+        _productRepositoryMock.Verify(repo =>
+            repo.AddAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ValidProduct_AssignsCreatedDateAndGeneratedId()
+    {
+        // Arrange
+        var command = new CreateProductCommand("Test Product", "SKU-123", "Test Desc", 100m, 10, DateTime.UtcNow.AddYears(1));
+        _productRepositoryMock.Setup(repo => repo.GetBySkuAsync(
+                command.SKU, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Product?)null);
+
+        Product? capturedProduct = null;
+        _productRepositoryMock.Setup(repo => repo.AddAsync(
+                It.IsAny<Product>(), It.IsAny<CancellationToken>()))
+            .Callback<Product, CancellationToken>((p, _) => capturedProduct = p)
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        capturedProduct.Should().NotBeNull();
+        capturedProduct.Id.Should().NotBeNullOrEmpty();
+        capturedProduct.CreatedAt.Should().NotBe(default(DateTime));
+        capturedProduct.CreatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
+    }
+}
+
+using AutoMapper;
+using FluentAssertions;
+using Moq;
+using Warehouse.Api.UnitTests.TestUtilities.Builders;
+using Warehouse.Application.Products.Commands.UpdateProductPrice;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Exceptions;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Api.UnitTests.ProductService;
+
+public class UpdateProductPrice
+{
+    private readonly Mock<IProductRepository> _productRepositoryMock = new();
+    private readonly UpdateProductPriceHandler _handler;
+
+    public UpdateProductPrice()
+    {
+        var mapperConfig = new MapperConfiguration(cfg =>
+        {
+            cfg.CreateMap<Product, ProductViewModel>();
+        });
+        var mapper = mapperConfig.CreateMapper();
+
+        _handler = new UpdateProductPriceHandler(
+            _productRepositoryMock.Object,
+            mapper);
+    }
+
+    [Fact]
+    public async Task Handle_ValidPrice_UpdatesPriceAndReturnsViewModel()
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var command = new UpdateProductPriceCommand(product.Id, 250m);
+
+        _productRepositoryMock.Setup(repo => repo.GetByIdAsync(
+                product.Id, It.IsAny<CancellationToken>())).ReturnsAsync(product);
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.Price.Should().Be(250m);
+
+        _productRepositoryMock.Verify(repo => repo.UpdateAsync(
+            It.Is<Product>(p => p.Price == 250m), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-10)]
+    public async Task Handle_InvalidPrice_ThrowsDomainException(decimal invalidPrice)
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var command = new UpdateProductPriceCommand(product.Id, invalidPrice);
+
+        _productRepositoryMock.Setup(repo =>
+                repo.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<DomainException>(() => _handler.Handle(command, CancellationToken.None));
+        _productRepositoryMock.Verify(repo =>
+            repo.UpdateAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+}
+
+using AutoMapper;
+using FluentAssertions;
+using Moq;
+using Warehouse.Api.UnitTests.TestUtilities.Builders;
+using Warehouse.Application.Products;
+using Warehouse.Application.Products.Commands.UpdateProductQuantity;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Exceptions;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Api.UnitTests.ProductService;
+
+public class UpdateQuantity
+{
+    private readonly Mock<IProductRepository> _productRepositoryMock = new();
+    private readonly Mock<ILowStockNotifier> _lowStockNotifierMock = new();
+    private readonly UpdateProductQuantityHandler _handler;
+
+    public UpdateQuantity()
+    {
+        var mapperConfig = new MapperConfiguration(cfg =>
+        {
+            cfg.CreateMap<Product, ProductViewModel>();
+        });
+        var mapper = mapperConfig.CreateMapper();
+
+        _handler = new UpdateProductQuantityHandler(
+            _productRepositoryMock.Object,
+            mapper,
+            _lowStockNotifierMock.Object);
+    }
+
+    [Fact]
+    public async Task Handle_ValidQuantity_UpdatesStockAndReturnsViewModel()
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var command = new UpdateProductQuantityCommand(product.Id, 50);
+
+        _productRepositoryMock.Setup(repo =>
+                repo.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().NotBeNull();
+        result.QuantityInStock.Should().Be(50);
+
+        _productRepositoryMock.Verify(repo => repo.UpdateAsync(
+            It.Is<Product>(p => p.QuantityInStock == 50), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ValidQuantity_DelegatesLowStockCheckToNotifierWithPreviousAndUpdatedProduct()
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build(); // starts at QuantityInStock = 10
+        const int previousQuantity = 10;
+        var command = new UpdateProductQuantityCommand(product.Id, 50);
+
+        _productRepositoryMock.Setup(repo =>
+                repo.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert — handler's only responsibility here is to hand off the *previous*
+        // quantity (captured before mutation) alongside the now-updated product.
+        // The threshold-crossing decision itself belongs to LowStockNotifier.
+        _lowStockNotifierMock.Verify(n => n.NotifyIfCrossedThresholdAsync(
+            It.Is<Product>(p => p.QuantityInStock == 50),
+            previousQuantity,
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_NegativeQuantity_ThrowsDomainException()
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var command = new UpdateProductQuantityCommand(product.Id, -5);
+
+        _productRepositoryMock.Setup(repo =>
+                repo.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        // Act & Assert
+        await Assert.ThrowsAsync<DomainException>(() => _handler.Handle(command, CancellationToken.None));
+        _productRepositoryMock.Verify(repo =>
+            repo.UpdateAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Never);
+        _lowStockNotifierMock.Verify(n => n.NotifyIfCrossedThresholdAsync(
+            It.IsAny<Product>(), It.IsAny<int>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_ValidQuantity_UpdatesLastUpdatedAt()
+    {
+        // Arrange
+        var product = new ProductBuilder().WithName("Laptop").Build();
+        var initialDate = product.LastUpdatedAt;
+
+        await Task.Delay(10);
+
+        var command = new UpdateProductQuantityCommand(product.Id, 20);
+
+        _productRepositoryMock.Setup(repo =>
+                repo.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(product);
+
+        Product? capturedProduct = null;
+        _productRepositoryMock.Setup(repo =>
+                repo.UpdateAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()))
+            .Callback<Product, CancellationToken>((p, _) => capturedProduct = p)
+            .Returns(Task.CompletedTask);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        capturedProduct.Should().NotBeNull();
+        capturedProduct.LastUpdatedAt.Should().BeAfter(initialDate);
+    }
+}
+
+}

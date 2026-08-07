@@ -1,6 +1,5 @@
 using AutoMapper;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Distributed;
 using Moq;
 using Warehouse.Api.UnitTests.TestUtilities.Builders;
 using Warehouse.Application.Exceptions;
@@ -16,7 +15,6 @@ public class AssignSupplier
 {
     private readonly Mock<IProductRepository> _productRepositoryMock = new();
     private readonly Mock<ISupplierRepository> _supplierRepositoryMock = new();
-    private readonly Mock<IDistributedCache> _cacheMock = new();
     private readonly AssignSupplierToProductHandler _handler;
 
     public AssignSupplier()
@@ -30,8 +28,7 @@ public class AssignSupplier
         _handler = new AssignSupplierToProductHandler(
             _productRepositoryMock.Object,
             _supplierRepositoryMock.Object,
-            mapper,
-            _cacheMock.Object);
+            mapper);
     }
 
     [Fact]
@@ -58,10 +55,6 @@ public class AssignSupplier
         
         _productRepositoryMock.Verify(repo => repo.UpdateAsync(
             It.Is<Product>(p => p.SupplierId == supplier.SupplierId), It.IsAny<CancellationToken>()), Times.Once);
-        _cacheMock.Verify(cache => cache.RemoveAsync(
-            $"GetProductByIdQuery-{product.Id}", It.IsAny<CancellationToken>()), Times.Once);
-        _cacheMock.Verify(cache => cache.RemoveAsync(
-            "ListProductsHandler_ListProductsQuery", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

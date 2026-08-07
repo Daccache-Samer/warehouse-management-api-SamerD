@@ -7,4 +7,4 @@ public record AdjustProductStockCommand(
     string ProductId,
     StockAdjustmentType AdjustmentType,
     int Quantity,
-    string? Reason) : IRequest<ProductViewModel>;
+    string? Reason) : IRequest<ProductViewModel>, IInvalidatesProductCache;

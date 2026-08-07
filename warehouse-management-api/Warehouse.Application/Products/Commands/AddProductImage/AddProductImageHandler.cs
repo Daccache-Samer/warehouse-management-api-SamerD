@@ -1,6 +1,5 @@
 ﻿using AutoMapper;
 using MediatR;
-using Microsoft.Extensions.Caching.Distributed;
 using Warehouse.Application.Exceptions;
 using Warehouse.Application.IntegrationEvents;
 using Warehouse.Application.Products.ViewModels;
@@ -10,8 +9,8 @@ using Warehouse.DomainWarehouse.Domain.Products;
 namespace Warehouse.Application.Products.Commands.AddProductImage;
 
 public class AddProductImageHandler(
-    IProductRepository productRepository, IFileStorage fileStorage,IMapper mapper,IDistributedCache cache
-    ,IEventPublisher eventPublisher,ICorrelationContext correlationContext)
+    IProductRepository productRepository, IFileStorage fileStorage, IMapper mapper,
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext)
     : IRequestHandler<AddProductImageCommand, ProductViewModel>
 {
     private static readonly string[] AllowedExtensions = [".jpg", ".jpeg", ".png"];
@@ -28,27 +27,25 @@ public class AddProductImageHandler(
         {
             throw new ValidationException("Only .jpg, .jpeg, and .png files are allowed.");
         }
-        
+
         if (!AllowedContentTypes.Contains(request.ContentType))
         {
             throw new ValidationException("File content type must be image/jpeg or image/png.");
         }
-        
+
         if (request.Length > MaxSizeBytes)
         {
             throw new ValidationException("File size must not exceed 2 MB.");
         }
 
         var result = await fileStorage.UploadAsync(
-            "products", product.Id, request.Content, request.FileName,request.ContentType, ct: cancellationToken);
+            "products", product.Id, request.Content, request.FileName, request.ContentType, ct: cancellationToken);
 
         var image = ProductImage.Create(product.Id, result.FileName, result.ObjectKey);
         product.AddImage(image); // throws DomainException if product archived
 
         await productRepository.UpdateAsync(product, cancellationToken);
-        await cache.RemoveAsync($"GetProductByIdQuery-{product.Id}", cancellationToken);
-        await cache.RemoveAsync("ListProductsHandler_ListProductsQuery", cancellationToken);
-        
+
         await eventPublisher.PublishAsync(
             new WarehouseFileUploadedEvent
             {
