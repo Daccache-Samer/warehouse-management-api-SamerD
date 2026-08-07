@@ -20,6 +20,7 @@ public class AssignSupplierToProductHandler(
         var supplier = await supplierRepository.GetByIdAsync(request.SupplierId, cancellationToken)
                        ?? throw new NotFoundException($"Supplier with id '{request.SupplierId}' was not found.");
         
+        product.AssignSupplier(supplier);
 
         await productRepository.UpdateAsync(product, cancellationToken);
         await cache.RemoveAsync($"GetProductByIdQuery-{product.Id}", cancellationToken);

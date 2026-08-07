@@ -1,0 +1,10 @@
+﻿Context: I am working on a warehouse management API project using a DDD architecture and CQRS. I am using PostgreSQL for the database, Redis for caching, Serilog for logging, RabbitMQ for intercommunication between microservices, Minio for object storage, and xUnit, Moq, and Fluent Assertions for testing. A configuration defect exists in my AssignSupplierToProductHandler. Currently, historical or archived product entities can still be mapped to live, active suppliers.
+Role: Senior Software Engineer. 
+Task: Generate the required implementation for this endpoint:
+
+*  A clear plain-text explanation of the faulty logic sequence. 
+*  The precise line numbers or blocks containing the logical oversight. 
+*  A robust, high-performance C# fix conforming to domain constraints. 
+*  An isolated unit test verifying that mapping a supplier to an archived product safely throws an exception.
+
+If you have any questions about the implementation, project, or anything related to them, ask before generating anything.
