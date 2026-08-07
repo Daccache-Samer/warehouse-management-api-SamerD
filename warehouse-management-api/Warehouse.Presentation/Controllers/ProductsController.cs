@@ -12,6 +12,7 @@ using Warehouse.Application.Products.Queries.ListProducts;
 using Warehouse.Application.Products.Queries.SearchProducts;
 using warehouse_management_api.Contracts;
 using Warehouse.Application.Products.Queries.DownloadProductImage;
+using Warehouse.Application.Products.Queries.GetExpiringProducts;
 using Warehouse.Application.Products.ViewModels;
 
 namespace warehouse_management_api.Controllers;
@@ -42,6 +43,15 @@ public class ProductsController(IMediator mediator) : ControllerBase
     public async Task<ActionResult<ProductViewModel>> Search([FromQuery] string? name, [FromQuery] string? supplier,CancellationToken cancellationToken = default)
     {
         var result = await mediator.Send(new SearchProductsQuery(name, supplier), cancellationToken);
+        return Ok(result);
+    }
+    
+    [HttpGet("expiring-soon")]
+    [Authorize(Policy = "ApiUser")]
+    public async Task<ActionResult<IReadOnlyList<ExpiringProductViewModel>>> GetExpiringSoon(
+        [FromQuery] GetExpiringProductsRequest request, CancellationToken cancellationToken = default)
+    {
+        var result = await mediator.Send(new GetExpiringProductsQuery(request.WithinDays), cancellationToken);
         return Ok(result);
     }
 
