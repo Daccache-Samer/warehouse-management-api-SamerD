@@ -1,0 +1,32 @@
+﻿WarehouseManagement.ShipmentTracking/
+├── Core/
+│   ├── Domain/
+│   │   ├── Aggregates/ShipmentAggregate/
+│   │   │   ├── Shipment.cs             # Aggregate Root
+│   │   │   ├── ShipmentItem.cs         # Entity / Value Object
+│   │   │   ├── TrackingStatus.cs       # Enum
+│   │   ├── Events/
+│   │   │   ├── ShipmentStatusUpdatedDomainEvent.cs
+│   │   ├── SeedWork/
+│   │       ├── AggregateRoot.cs        # Base class for domain events
+│   ├── Application/
+│       ├── DTOs/
+│       ├── Features/Shipments/
+│       │   ├── Commands/               # MediatR Commands & Handlers
+│       │   │   ├── CreateShipment/
+│       │   │   ├── AssignProduct/
+│       │   │   ├── UpdateDeliveryState/
+│       │   ├── Queries/                # MediatR Queries & Handlers
+│       ├── Interfaces/
+│           ├── IShipmentRepository.cs
+│           ├── ISupplierNotificationService.cs
+├── Infrastructure/
+│   ├── Persistence/
+│   │   ├── ShipmentDbContext.cs
+│   │   ├── Repositories/ShipmentRepository.cs
+│   ├── Services/
+│       ├── SupplierNotificationService.cs
+├── API/
+    ├── Controllers/
+    │   ├── ShipmentsController.cs
+    ├── Program.cs                      # .NET 8 DI Registrations

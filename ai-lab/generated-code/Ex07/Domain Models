@@ -1,0 +1,77 @@
+﻿public enum TrackingStatus
+{
+    Pending,
+    Processing,
+    InTransit,
+    Delivered,
+    Canceled
+}
+
+public class ShipmentItem
+{
+    public Guid ProductId { get; private set; }
+    public int Quantity { get; private set; }
+
+    internal ShipmentItem(Guid productId, int quantity)
+    {
+        if (quantity <= 0) throw new ArgumentException("Quantity must be greater than zero.");
+        ProductId = productId;
+        Quantity = quantity;
+    }
+}
+
+public class Shipment : AggregateRoot
+{
+    public Guid Id { get; private set; }
+    public Guid SupplierId { get; private set; }
+    public TrackingStatus Status { get; private set; }
+    
+    private readonly List<ShipmentItem> _items = new();
+    public IReadOnlyCollection<ShipmentItem> Items => _items.AsReadOnly();
+
+    private Shipment() { } // Required for EF Core
+
+    public static Shipment Create(Guid supplierId)
+    {
+        return new Shipment 
+        { 
+            Id = Guid.NewGuid(), 
+            SupplierId = supplierId, 
+            Status = TrackingStatus.Pending 
+        };
+    }
+
+    public void AssignProduct(Guid productId, int quantity)
+    {
+        if (Status != TrackingStatus.Pending)
+            throw new InvalidOperationException("Can only assign products to pending shipments.");
+
+        var existingItem = _items.FirstOrDefault(i => i.ProductId == productId);
+        if (existingItem != null)
+        {
+            // Business rule: decide if we merge quantities or reject
+            _items.Remove(existingItem);
+            _items.Add(new ShipmentItem(productId, existingItem.Quantity + quantity));
+        }
+        else
+        {
+            _items.Add(new ShipmentItem(productId, quantity));
+        }
+    }
+
+    public void UpdateDeliveryState(TrackingStatus newStatus)
+    {
+        if (Status == TrackingStatus.Delivered)
+            throw new InvalidOperationException("Cannot update a shipment that is already delivered.");
+
+        Status = newStatus;
+
+        // Trigger Domain Event for specific statuses to decouple the notification logic
+        if (newStatus == TrackingStatus.InTransit || newStatus == TrackingStatus.Delivered)
+        {
+            AddDomainEvent(new ShipmentStatusUpdatedDomainEvent(Id, SupplierId, newStatus));
+        }
+    }
+}
+
+public record ShipmentStatusUpdatedDomainEvent(Guid ShipmentId, Guid SupplierId, TrackingStatus NewStatus) : INotification;

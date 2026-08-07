@@ -1,0 +1,47 @@
+﻿// 1. Command & Handler for Updating Delivery State
+public record UpdateDeliveryStateCommand(Guid ShipmentId, TrackingStatus NewStatus) : IRequest<bool>;
+
+public class UpdateDeliveryStateCommandHandler : IRequestHandler<UpdateDeliveryStateCommand, bool>
+{
+    private readonly IShipmentRepository _repository;
+
+    public UpdateDeliveryStateCommandHandler(IShipmentRepository repository)
+    {
+        _repository = repository;
+    }
+
+    public async Task<bool> Handle(UpdateDeliveryStateCommand request, CancellationToken cancellationToken)
+    {
+        var shipment = await _repository.GetByIdAsync(request.ShipmentId, cancellationToken);
+        if (shipment == null) return false;
+
+        // The domain handles the business logic and creates the event
+        shipment.UpdateDeliveryState(request.NewStatus);
+
+        // SaveChangesAsync will dispatch the domain events
+        await _repository.UpdateAsync(shipment, cancellationToken);
+        
+        return true;
+    }
+}
+
+// 2. Domain Event Handler for Orchestrating Supplier Notification
+public class ShipmentStatusUpdatedEventHandler : INotificationHandler<ShipmentStatusUpdatedDomainEvent>
+{
+    private readonly ISupplierNotificationService _notificationService;
+
+    public ShipmentStatusUpdatedEventHandler(ISupplierNotificationService notificationService)
+    {
+        _notificationService = notificationService;
+    }
+
+    public async Task Handle(ShipmentStatusUpdatedDomainEvent notification, CancellationToken cancellationToken)
+    {
+        // This keeps the HTTP request fast and handles the side-effect cleanly
+        await _notificationService.NotifyStatusChangeAsync(
+            notification.SupplierId, 
+            notification.ShipmentId, 
+            notification.NewStatus, 
+            cancellationToken);
+    }
+}
