@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Warehouse.DomainWarehouse.Domain.Products;
 
 namespace Warehouse.Infrastructure.Persistence;
@@ -12,10 +12,8 @@ public class ProductRepository(WarehouseDbContext context) : IProductRepository
 
     public async Task<Product?> GetBySkuAsync(string sku, CancellationToken ct = default)
     {
-        //used to be:  return await context.Products.AsNoTracking().FirstOrDefaultAsync(p =>EF.Functions.ILike(p.SKU, sku), ct); Removed ot because it is postgreSQL native and threw an error when used on th inmemory test storage.
         return await context.Products.FirstOrDefaultAsync(p =>
-            p.SKU.Equals(sku, StringComparison.CurrentCultureIgnoreCase), ct);
-        
+            p.SKU.ToLower() == sku.ToLower(), ct);
     }
 
     public async Task<IReadOnlyList<Product>> GetAllAsync(CancellationToken ct = default)
