@@ -1,7 +1,6 @@
 ﻿using System.Text;
 using AutoMapper;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Distributed;
 using Moq;
 using Warehouse.Api.UnitTests.TestUtilities.Builders;
 using Warehouse.Application.Exceptions;
@@ -17,9 +16,8 @@ public class AddProductImage
     private readonly Mock<IProductRepository> _productRepositoryMock = new();
     private readonly Mock<IFileStorage> _fileStorageMock = new();
     private readonly Mock<IMapper> _mapperMock = new();
-    private readonly Mock<IDistributedCache> _cacheMock = new();
     private readonly Mock<IEventPublisher> _eventPublisherMock = new();
-    
+
     private readonly AddProductImageHandler _sut;
 
     public AddProductImage()
@@ -29,7 +27,6 @@ public class AddProductImage
             _productRepositoryMock.Object,
             _fileStorageMock.Object,
             _mapperMock.Object,
-            _cacheMock.Object,
             _eventPublisherMock.Object,
             correlationContextMock.Object
         );
@@ -51,7 +48,7 @@ public class AddProductImage
             .ReturnsAsync(product);
 
         _fileStorageMock.Setup(fs => fs.UploadAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), 
+                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(),
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new FileStorageResult("photo.jpg", "products/photo.jpg"));
 
@@ -66,11 +63,11 @@ public class AddProductImage
         result.Should().NotBeNull();
         _fileStorageMock.Verify(fs => fs.UploadAsync(
             It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
-        _productRepositoryMock.Verify(repo => 
+        _productRepositoryMock.Verify(repo =>
             repo.UpdateAsync(product, It.IsAny<CancellationToken>()), Times.Once);
     }
+
     [Fact]
-    
     public async Task Handle_ValidPngFile_UploadsSuccessfullyAndReturnsViewModel()
     {
         // Arrange
@@ -123,7 +120,6 @@ public class AddProductImage
         await act.Should().ThrowAsync<ValidationException>()
             .WithMessage("Only .jpg, .jpeg, and .png files are allowed.");
     }
-    
 
     [Fact]
     public async Task Handle_InvalidContentType_ThrowsValidationException()

@@ -24,10 +24,13 @@ using Warehouse.Infrastructure.Firebase;
 using Warehouse.Infrastructure.Persistence;
 using Warehouse.Infrastructure.Storage;
 using dotenv.net;
+using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Minio;
 using Minio.DataModel.Args;
 using warehouse_management_api.Common;
+using Warehouse.Application;
+using Warehouse.Application.Common;
 using Warehouse.DomainWarehouse.Domain.Common;
 using Warehouse.Infrastructure.Messaging;
 
@@ -110,7 +113,8 @@ builder.Services.AddSingleton<IMinioClient>(_ => new MinioClient()
 builder.Services.AddSingleton<IFileStorage>(sp =>
     new MinioFileStorage(sp.GetRequiredService<IMinioClient>(),
         Environment.GetEnvironmentVariable("MINIO_BUCKET") ?? throw new InvalidOperationException()));
-
+builder.Services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ProductCacheInvalidationBehavior<,>));
+builder.Services.AddScoped<ILowStockNotifier, LowStockNotifier>();
 builder.Services.AddHealthChecks()
     .AddNpgSql(configuration.GetConnectionString("DefaultConnection") ?? throw new InvalidOperationException())
     .AddRedis(configuration.GetConnectionString("Redis") ?? throw new InvalidOperationException());

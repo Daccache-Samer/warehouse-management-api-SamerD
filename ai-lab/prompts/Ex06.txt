@@ -1,0 +1,12 @@
+﻿Context: I am working on a warehouse management API project using a DDD architecture and CQRS. I am using PostgreSQL for the database, Redis for caching, Serilog for logging, RabbitMQ for intercommunication between microservices, Minio for object storage, and xUnit, Moq, and Fluent Assertions for testing. I want to add comprehensive and up-to-date documentation for my project.
+Role: Senior Software Engineer. 
+Task: Generate the following implementations:
+
+* API README
+* endpoint summaries 
+* request examples
+* response examples
+* architecture notes 
+
+
+If you have any questions about the implementation, project, or anything related to them, ask before generating anything.

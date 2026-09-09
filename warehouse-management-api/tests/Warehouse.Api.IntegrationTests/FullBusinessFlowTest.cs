@@ -66,6 +66,18 @@ public class FullBusinessFlowTest : IClassFixture<CustomWebApplicationFactory>
             "file", "photo.jpg", "image/jpeg", "fake-jpg-bytes"u8.ToArray());
         var uploadResponse = await _client.PostAsync($"/api/products/{product.Id}/image", imageContent);
         uploadResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        
+        using (var uploadScope = _factory.Services.CreateScope())
+        {
+            var uploadDb = uploadScope.ServiceProvider.GetRequiredService<WarehouseDbContext>();
+            var afterUpload = await uploadDb.Products
+                .Include(p => p.Images)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == product.Id);
+
+            afterUpload.Should().NotBeNull();
+            afterUpload.Images.Should().ContainSingle(i => i.FileName == "photo.jpg");
+        }
 
         // Step 5 — update quantity
         var quantityResponse = await _client.PostAsJsonAsync(
@@ -100,6 +112,6 @@ public class FullBusinessFlowTest : IClassFixture<CustomWebApplicationFactory>
         persisted.SupplierId.Should().Be(supplier.SupplierId);
         persisted.QuantityInStock.Should().Be(5);
         persisted.Price.Should().Be(1299.99m);
-        persisted.Images.Should().ContainSingle(i => i.FileName == "photo.jpg");
+        persisted.Images.Should().BeEmpty("ArchiveProductHandler cascades image deletion on archive");
     }
 }

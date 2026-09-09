@@ -1,0 +1,46 @@
+﻿First prompt:
+Context: I am working on a warehouse management API project using a DDD architecture and CQRS. I am using PostgreSQL for the database, Redis for caching, Serilog for logging, RabbitMQ for intercommunication between microservices, Minio for object storage, and xUnit, Moq, and Fluent Assertions for testing. I want to add integration tests for certain endpoints using .NET's native WebApplicationFactory. You should explicitly write assertions verifying HTTP response headers/status codes, model property match conditions, and persistent server-side effects. 
+Role: Senior Software Engineer. 
+Task: Generate the required implementation for these routes:
+
+* POST /api/products (Full product initialization flow)
+* POST /api/products/{id}/image (Binary image stream processing)
+* DELETE /api/products/{id} (Resource teardown and cascading cleanup rules)
+* 
+
+If you have any questions about the implementation, project, or anything related to them, ask before generating anything.
+
+response: 
+Before I generate these tests, I need a few things clarified — guessing on any of these would produce tests that either don't compile or assert against the wrong contract.
+
+**1. Missing types I need to see the shape of:**
+- `ProductViewModel` (and the AutoMapper profile mapping `Product` → `ProductViewModel`) — I need exact property names/types to write accurate `FluentAssertions` checks on the response body.
+- `WarehouseDbContext` (just the `DbSet` declarations) — to confirm how I query persisted state directly in assertions (e.g., `db.Products.Include(p => p.Images).FirstOrDefaultAsync(...)`).
+
+**2. DELETE `/api/products/{id}` — discrepancy to flag:**
+The task description calls this "resource teardown and cascading cleanup," but looking at `ArchiveProductHandler`, the actual behavior is a **soft archive** — it sets `IsArchived = true`, invalidates two cache keys, and does *not* touch `ProductImage` records or call `IFileStorage.DeleteAsync` for any uploaded images. So today there is no cascading cleanup of images/blobs on delete.
+
+Do you want me to:
+- **(a)** Write integration tests against the current soft-archive behavior only (verify `IsArchived == true`, product still exists in DB, images untouched, cache keys evicted), or
+- **(b)** Also implement actual cascade deletion of associated `ProductImage` records + `IFileStorage` blobs inside `ArchiveProductHandler` (or a new handler) as part of this task, and then test that?
+
+These produce very different test suites, so I don't want to assume.
+
+**3. Does `GetProductByIdQuery` / `ListProductsQuery` filter out archived products?**
+This affects whether my DELETE test asserts a subsequent `GET /api/products/{id}` still returns 200 (product retrievable but archived) or something else. I don't have the query handlers, just the repository.
+
+**4. Test project conventions:**
+- Should each test class implement `IClassFixture<CustomWebApplicationFactory>` individually (fresh in-memory DB per class), or is there an `ICollectionFixture`/shared collection pattern I should follow so tests share one factory instance?
+- Any existing naming convention for test classes/methods you want me to match (e.g. `MethodName_Scenario_ExpectedResult`)?
+
+**5. POST `/api/products/{id}/image` — what response shape does upload return?**
+The controller returns `ProductViewModel` (the whole product), not just the image metadata — confirming that's intentional and I should assert `Images` collection contains the new entry with matching `FileName`/`ObjectKey` pattern.
+
+Once I have the `ProductViewModel`/mapping profile and your answer on point 2, I'll generate the three test classes (`CreateProductTests`, `UploadProductImageTests`, `DeleteProductTests`) with explicit status code, header, response-body, and DB-state assertions.
+
+second prompt:
+1- I uploaded the required files.
+2-Implement actual cascade deletion inside ArchiveProductHandler and test all behaviours.
+3-I uploaded the required files.
+4-Each test class should implement IClassFixture<CustomWebApplicationFactory>
+5-It is intentional.

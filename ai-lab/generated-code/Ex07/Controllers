@@ -1,0 +1,47 @@
+﻿[ApiController]
+[Route("api/v1/shipments")]
+public class ShipmentsController : ControllerBase
+{
+    private readonly IMediator _mediator;
+
+    public ShipmentsController(IMediator mediator)
+    {
+        _mediator = mediator;
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> CreateShipment([FromBody] CreateShipmentRequest request)
+    {
+        var command = new CreateShipmentCommand(request.SupplierId);
+        var shipmentId = await _mediator.Send(command);
+        
+        return CreatedAtAction(nameof(GetShipment), new { id = shipmentId }, new { Id = shipmentId });
+    }
+
+    [HttpPost("{id}/products")]
+    public async Task<IActionResult> AssignProduct(Guid id, [FromBody] AssignProductRequest request)
+    {
+        var command = new AssignProductCommand(id, request.ProductId, request.Quantity);
+        var result = await _mediator.Send(command);
+        
+        return result ? NoContent() : NotFound();
+    }
+
+    [HttpPatch("{id}/status")]
+    public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateShipmentStatusRequest request)
+    {
+        var command = new UpdateDeliveryStateCommand(id, request.Status);
+        var result = await _mediator.Send(command);
+        
+        return result ? NoContent() : NotFound();
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetShipment(Guid id)
+    {
+        var query = new GetShipmentQuery(id);
+        var response = await _mediator.Send(query);
+        
+        return response != null ? Ok(response) : NotFound();
+    }
+}

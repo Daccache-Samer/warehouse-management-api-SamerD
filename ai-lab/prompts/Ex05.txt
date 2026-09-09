@@ -1,0 +1,506 @@
+﻿first prompt:
+Context: I am working on a warehouse management API project using a DDD architecture and CQRS. I am using PostgreSQL for the database, Redis for caching, Serilog for logging, RabbitMQ for intercommunication between microservices, Minio for object storage, and xUnit, Moq, and Fluent Assertions for testing. I want to enhance long-term readability, safety, and operational performance. 
+Role: Senior Software Engineer. 
+Task: Refactor legacy code to enhance readability, clean up architectural separation of concerns, and minimize redundant nested structures. Do not change code behaviour.
+
+If you have any questions about the implementation or the project, or anything related to them, ask before generating anything.
+
+response:
+Here's the refactor. I am using `MediatR` `IPipelineBehavior<,>` for invalidation as you specified.
+
+---
+
+## 1. New shared components
+
+**`IInvalidatesProductCache.cs`** (new — put in `Warehouse.Application.Products`)
+```csharp
+namespace Warehouse.Application.Products;
+
+/// <summary>
+/// Implemented by commands that trigger product cache invalidation after a successful write.
+/// ProductId is null for commands where no "by id" entry could exist yet (e.g. creation).
+/// </summary>
+public interface IInvalidatesProductCache
+{
+    string? ProductId { get; }
+}
+```
+
+**`ProductCacheInvalidationBehavior.cs`** (new — put in `Warehouse.Application.Common.Behaviors`)
+```csharp
+using MediatR;
+using Microsoft.Extensions.Caching.Distributed;
+
+namespace Warehouse.Application.Common.Behaviors;
+
+public class ProductCacheInvalidationBehavior<TRequest, TResponse>(IDistributedCache cache)
+    : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : notnull, IInvalidatesProductCache
+{
+    public async Task<TResponse> Handle(
+        TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken cancellationToken)
+    {
+        var response = await next();
+
+        // NOTE: these string literals intentionally do not match ProductCacheKeys.ById/List
+        // (which ignore their parameters). This is a known, pre-existing bug — invalidation
+        // is currently a no-op. Preserved as-is per decision; see ProductCacheKeys.cs.
+        if (request.ProductId is not null)
+        {
+            await cache.RemoveAsync($"GetProductByIdQuery-{request.ProductId}", cancellationToken);
+        }
+        await cache.RemoveAsync("ListProductsHandler_ListProductsQuery", cancellationToken);
+
+        return response;
+    }
+}
+```
+
+**DI registration** (wherever your other MediatR/behavior registrations live):
+```csharp
+services.AddScoped(typeof(IPipelineBehavior<,>), typeof(ProductCacheInvalidationBehavior<,>));
+```
+
+**`ILowStockNotifier.cs` / `LowStockNotifier.cs`** (new — put alongside `StockThresholdPolicy`)
+```csharp
+using Microsoft.Extensions.Configuration;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products;
+
+public interface ILowStockNotifier
+{
+    Task NotifyIfCrossedThresholdAsync(Product product, int previousQuantity, CancellationToken cancellationToken);
+}
+
+public class LowStockNotifier(
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext, IConfiguration configuration)
+    : ILowStockNotifier
+{
+    public async Task NotifyIfCrossedThresholdAsync(
+        Product product, int previousQuantity, CancellationToken cancellationToken)
+    {
+        var threshold = configuration.GetValue("WarehouseEvents:LowStockThreshold", 10);
+        if (!StockThresholdPolicy.CrossedIntoLowStock(previousQuantity, product.QuantityInStock, threshold))
+        {
+            return;
+        }
+
+        await eventPublisher.PublishAsync(
+            new StockLowDetectedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.StockLow,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Warning",
+                Sku = product.SKU,
+                ProductName = product.Name,
+                CurrentQuantity = product.QuantityInStock,
+                Threshold = threshold
+            },
+            EventTypes.StockLow,
+            cancellationToken);
+    }
+}
+```
+
+**DI registration:**
+```csharp
+services.AddScoped<ILowStockNotifier, LowStockNotifier>();
+```
+
+---
+
+## 2. Command files — need your verification
+
+I don't have the actual command record files (`AddProductImageCommand.cs`, etc.) — only the handlers and controller call sites. I inferred property names from how handlers/controller use them. Add `IInvalidatesProductCache` to each:
+
+```csharp
+// AddProductImageCommand — already has ProductId, just add the interface
+public record AddProductImageCommand(string ProductId, Stream Content, string FileName, long Length, string ContentType)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// AdjustProductStockCommand
+public record AdjustProductStockCommand(string ProductId, StockAdjustmentType AdjustmentType, int Quantity, string? Reason)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// ArchiveProductCommand
+public record ArchiveProductCommand(string ProductId) : IRequest, IInvalidatesProductCache;
+
+// AssignSupplierToProductCommand
+public record AssignSupplierToProductCommand(string ProductId, string SupplierId)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// UpdateProductPriceCommand
+public record UpdateProductPriceCommand(string ProductId, decimal Price)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// UpdateProductQuantityCommand
+public record UpdateProductQuantityCommand(string ProductId, int QuantityInStock)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache;
+
+// CreateProductCommand — no ProductId (product doesn't exist yet), explicit null
+public record CreateProductCommand(string Name, string SKU, string Description, decimal Price, int QuantityInStock, DateTime ExpiryDate)
+    : IRequest<ProductViewModel>, IInvalidatesProductCache
+{
+    public string? ProductId => null;
+}
+```
+
+**Please diff these against your real files before applying** — if a property is named differently (e.g. `Sku` vs `SKU`), the interface still works fine since `ProductId` is the only member that matters, but double-check I didn't drop/misname any of the other constructor params from your actual definitions.
+
+---
+
+## 3. Refactored handlers
+
+**AddProductImageHandler.cs**
+```csharp
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.AddProductImage;
+
+public class AddProductImageHandler(
+    IProductRepository productRepository, IFileStorage fileStorage, IMapper mapper,
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext)
+    : IRequestHandler<AddProductImageCommand, ProductViewModel>
+{
+    private static readonly string[] AllowedExtensions = [".jpg", ".jpeg", ".png"];
+    private static readonly string[] AllowedContentTypes = ["image/jpeg", "image/png"];
+    private const long MaxSizeBytes = 2 * 1024 * 1024; // 2 MB
+
+    public async Task<ProductViewModel> Handle(AddProductImageCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        var extension = Path.GetExtension(request.FileName).ToLowerInvariant();
+        if (!AllowedExtensions.Contains(extension))
+        {
+            throw new ValidationException("Only .jpg, .jpeg, and .png files are allowed.");
+        }
+
+        if (!AllowedContentTypes.Contains(request.ContentType))
+        {
+            throw new ValidationException("File content type must be image/jpeg or image/png.");
+        }
+
+        if (request.Length > MaxSizeBytes)
+        {
+            throw new ValidationException("File size must not exceed 2 MB.");
+        }
+
+        var result = await fileStorage.UploadAsync(
+            "products", product.Id, request.Content, request.FileName, request.ContentType, ct: cancellationToken);
+
+        var image = ProductImage.Create(product.Id, result.FileName, result.ObjectKey);
+        product.AddImage(image); // throws DomainException if product archived
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        await eventPublisher.PublishAsync(
+            new WarehouseFileUploadedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.FileUploaded,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Info",
+                FileName = result.FileName,
+                ObjectKey = result.ObjectKey
+            },
+            EventTypes.FileUploaded,
+            cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+```
+
+**AdjustProductStockHandler.cs**
+```csharp
+using AutoMapper;
+using MediatR;
+using Microsoft.Extensions.Logging;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.AdjustProductStock;
+
+public class AdjustProductStockHandler(
+    IProductRepository productRepository, IMapper mapper, ILogger<AdjustProductStockHandler> logger,
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext, ILowStockNotifier lowStockNotifier)
+    : IRequestHandler<AdjustProductStockCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(AdjustProductStockCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        var previousQuantity = product.QuantityInStock;
+        var delta = request.AdjustmentType == StockAdjustmentType.Increase ? request.Quantity : -request.Quantity;
+        product.AdjustQuantity(delta);
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        logger.LogInformation(
+            "Stock adjusted: {ProductId} {Sku} {AdjustmentType} {Delta} -> new quantity {NewQuantity}. Reason: {Reason}",
+            product.Id, product.SKU, request.AdjustmentType, delta, product.QuantityInStock, request.Reason ?? "n/a");
+
+        await eventPublisher.PublishAsync(
+            new StockAdjustedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.StockAdjusted,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Info",
+                Sku = product.SKU,
+                ProductName = product.Name,
+                AdjustmentType = request.AdjustmentType.ToString(),
+                Delta = delta,
+                NewQuantity = product.QuantityInStock,
+                Reason = request.Reason
+            },
+            EventTypes.StockAdjusted,
+            cancellationToken);
+
+        await lowStockNotifier.NotifyIfCrossedThresholdAsync(product, previousQuantity, cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+```
+
+**ArchiveProductHandler.cs**
+```csharp
+using MediatR;
+using Microsoft.Extensions.Logging;
+using Warehouse.Application.Exceptions;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.ArchiveProduct;
+
+public class ArchiveProductHandler(
+    IProductRepository productRepository,
+    IFileStorage fileStorage,
+    ILogger<ArchiveProductHandler> logger)
+    : IRequestHandler<ArchiveProductCommand>
+{
+    public async Task Handle(ArchiveProductCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        // Detach images first so the removal is captured by EF's change tracker
+        // on the same tracked instance that UpdateAsync will persist.
+        var removedImages = product.ClearImages();
+        product.Archive();
+
+        // Single DB transaction: archives the product and deletes the
+        // now-orphaned ProductImage rows (required FK relationship ->
+        // EF marks them Deleted when removed from the collection).
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        // Blob cleanup happens after the DB commit succeeds, and failures
+        // here are logged but non-fatal: an orphaned blob is an acceptable
+        // outcome, a product archived-in-DB-but-500-to-the-client is not.
+        foreach (var image in removedImages)
+        {
+            try
+            {
+                await fileStorage.DeleteAsync(image.ObjectKey, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(
+                    ex,
+                    "Failed to delete blob {ObjectKey} for archived product {ProductId}; DB record was removed regardless.",
+                    image.ObjectKey, product.Id);
+            }
+        }
+
+        logger.LogInformation(
+            "Product archived: {ProductId} {Sku}, {ImageCount} associated image(s) cascaded for deletion.",
+            product.Id, product.SKU, removedImages.Count);
+    }
+}
+```
+
+**AssignSupplierToProductHandler.cs**
+```csharp
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Products;
+using Warehouse.DomainWarehouse.Domain.Suppliers;
+
+namespace Warehouse.Application.Products.Commands.AssignSupplierToProduct;
+
+public class AssignSupplierToProductHandler(
+    IProductRepository productRepository, ISupplierRepository supplierRepository, IMapper mapper)
+    : IRequestHandler<AssignSupplierToProductCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(AssignSupplierToProductCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        var supplier = await supplierRepository.GetByIdAsync(request.SupplierId, cancellationToken)
+                       ?? throw new NotFoundException($"Supplier with id '{request.SupplierId}' was not found.");
+
+        product.AssignSupplier(supplier);
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+```
+
+**CreateProductHandler.cs**
+```csharp
+using AutoMapper;
+using MediatR;
+using Microsoft.Extensions.Logging;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.IntegrationEvents;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Common;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.CreateProduct;
+
+public class CreateProductHandler(
+    IProductRepository productRepository, IMapper mapper, ILogger<CreateProductHandler> logger,
+    IEventPublisher eventPublisher, ICorrelationContext correlationContext)
+    : IRequestHandler<CreateProductCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(CreateProductCommand request, CancellationToken cancellationToken)
+    {
+        var existing = await productRepository.GetBySkuAsync(request.SKU, cancellationToken);
+        if (existing is not null)
+        {
+            throw new ConflictException($"A product with SKU '{request.SKU}' already exists.");
+        }
+
+        var product = Product.Create(
+            request.Name,
+            request.SKU,
+            request.Description,
+            request.Price,
+            request.QuantityInStock,
+            request.ExpiryDate);
+
+        await productRepository.AddAsync(product, cancellationToken);
+
+        await eventPublisher.PublishAsync(
+            new ProductCreatedEvent
+            {
+                CorrelationId = correlationContext.CorrelationId,
+                EventType = EventTypes.ProductCreated,
+                RelatedEntityId = product.Id,
+                RelatedEntityType = "Product",
+                Severity = "Info",
+                Sku = product.SKU,
+                ProductName = product.Name,
+                Price = product.Price,
+                InitialQuantity = product.QuantityInStock
+            },
+            EventTypes.ProductCreated,
+            cancellationToken);
+
+        logger.LogInformation(
+            "Product created: {ProductId} {Sku} {Name} at price {Price}",
+            product.Id, product.SKU, product.Name, product.Price);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+```
+
+**UpdateProductPriceHandler.cs**
+```csharp
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.UpdateProductPrice;
+
+public class UpdateProductPriceHandler(IProductRepository productRepository, IMapper mapper)
+    : IRequestHandler<UpdateProductPriceCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(UpdateProductPriceCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        product.UpdatePrice(request.Price);
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+```
+
+**UpdateProductQuantityHandler.cs**
+```csharp
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Exceptions;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Products;
+
+namespace Warehouse.Application.Products.Commands.UpdateProductQuantity;
+
+public class UpdateProductQuantityHandler(
+    IProductRepository productRepository, IMapper mapper, ILowStockNotifier lowStockNotifier)
+    : IRequestHandler<UpdateProductQuantityCommand, ProductViewModel>
+{
+    public async Task<ProductViewModel> Handle(UpdateProductQuantityCommand request, CancellationToken cancellationToken)
+    {
+        var product = await productRepository.GetByIdAsync(request.ProductId, cancellationToken)
+                      ?? throw new NotFoundException($"Product with id '{request.ProductId}' was not found.");
+
+        var previousQuantity = product.QuantityInStock;
+        product.UpdateQuantity(request.QuantityInStock);
+
+        await productRepository.UpdateAsync(product, cancellationToken);
+
+        await lowStockNotifier.NotifyIfCrossedThresholdAsync(product, previousQuantity, cancellationToken);
+
+        return mapper.Map<ProductViewModel>(product);
+    }
+}
+```
+
+---
+
+## Unchanged (for completeness, and why)
+
+- `GetProductByIdHandler.cs`, `ListProductsHandler.cs` — these are Queries; the pipeline behavior targets `IInvalidatesProductCache` (commands only), so no change needed.
+- `ProductCacheKeys.cs` — bug preserved per your decision.
+- `SearchProductsHandler.cs`, `DownloadProductImageHandler.cs`, `ProductImageDownloadResult.cs`, `GetExpiringPorductsHandler.cs`, `ProductViewModel.cs`, `ProductMappingProfile.cs`, `ProductsController.cs` — no duplication or cache/pipeline concerns in these; nothing to consolidate. `GetExpiringPorductsHandler.cs` still has the filename typo (class name is correct) — didn't touch it since renaming wasn't in scope of the two duplications you asked me to address, but flagging again in case you want it cleaned up separately.
+
+**Net effect:** 7 constructor signatures shrunk (no more `IDistributedCache` in mutation handlers, `IConfiguration`/`IEventPublisher`/`ICorrelationContext` collapsed into `ILowStockNotifier` where that was their only use), ~26 lines of duplicated cache/threshold logic removed from handlers, centralized into 2 reusable, independently testable components.
+
+One thing worth your judgment: unit tests that currently mock `IDistributedCache` on these 7 handlers will need updating (either removed or moved to a new `ProductCacheInvalidationBehaviorTests`), and any test mocking `IConfiguration`/threshold behavior on `AdjustProductStockHandler`/`UpdateProductQuantityHandler` moves to `LowStockNotifierTests`. Want me to sketch those test updates too, or are you handling that yourself per your usual workflow?
+
+prompt 2:
+Yes update the tests.

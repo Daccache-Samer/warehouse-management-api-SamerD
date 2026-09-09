@@ -1,6 +1,5 @@
 using AutoMapper;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Distributed;
 using Moq;
 using Warehouse.Api.UnitTests.TestUtilities.Builders;
 using Warehouse.Application.Products.Commands.UpdateProductPrice;
@@ -13,7 +12,6 @@ namespace Warehouse.Api.UnitTests.ProductService;
 public class UpdateProductPrice
 {
     private readonly Mock<IProductRepository> _productRepositoryMock = new();
-    private readonly Mock<IDistributedCache> _cacheMock = new();
     private readonly UpdateProductPriceHandler _handler;
 
     public UpdateProductPrice()
@@ -26,8 +24,7 @@ public class UpdateProductPrice
 
         _handler = new UpdateProductPriceHandler(
             _productRepositoryMock.Object,
-            mapper,
-            _cacheMock.Object);
+            mapper);
     }
 
     [Fact]
@@ -46,11 +43,9 @@ public class UpdateProductPrice
         // Assert
         result.Should().NotBeNull();
         result.Price.Should().Be(250m);
-        
+
         _productRepositoryMock.Verify(repo => repo.UpdateAsync(
             It.Is<Product>(p => p.Price == 250m), It.IsAny<CancellationToken>()), Times.Once);
-        _cacheMock.Verify(cache => cache.RemoveAsync(
-            $"GetProductByIdQuery-{product.Id}", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]
@@ -62,13 +57,13 @@ public class UpdateProductPrice
         var product = new ProductBuilder().WithName("Laptop").Build();
         var command = new UpdateProductPriceCommand(product.Id, invalidPrice);
 
-        _productRepositoryMock.Setup(repo => 
+        _productRepositoryMock.Setup(repo =>
                 repo.GetByIdAsync(product.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(product);
 
         // Act & Assert
         await Assert.ThrowsAsync<DomainException>(() => _handler.Handle(command, CancellationToken.None));
-        _productRepositoryMock.Verify(repo => 
+        _productRepositoryMock.Verify(repo =>
             repo.UpdateAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

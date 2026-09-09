@@ -1,0 +1,46 @@
+﻿first prompt:
+Context: I am working on a warehouse management API project using a DDD architecture and CQRS. I am using PostgreSQL
+for the database, Redis for caching, Serilog for logging, RabbitMQ for intercommunication between microservices,
+Minio for object storage, and xUnit, Moq, and Fluent Assertions for testing. I want to add test suites for
+ProductImageDownload.
+Role: Senior Software Engineer. 
+Task: Generate the required implementation for this endpoint:
+
+* Positive tests: Standard execution paths assuming optimal, validated business data inputs.
+* Negative tests: Graceful infrastructure failures, missing database entities, and parameter format rejections.
+* Edge cases: Arithmetic integer overflow conditions, maximum string length breaches,
+ or tricky localized timezone boundary configurations.
+
+If you have any questions about the implementation, project, or anything related to them, ask before generating anything.
+
+response from Ai:
+I want to make sure I build the right test suite before generating anything — a few things affect the actual test code:
+
+**1. Scope**
+`DownloadProductImageHandler` is the core logic, but you also have `Warehouse.Api.IntegrationTests` from Session 9. Do you want:
+- Unit tests only, targeting `DownloadProductImageHandler` (mocking `IProductRepository`/`IFileStorage`), or
+- Unit tests + integration tests hitting `GET /api/products/{id}/images/{fileName}/download` through `WebApplicationFactory` (auth, routing, `File()` result content-type/filename headers included)?
+
+**2. Test data construction**
+Do you already have a builder/fixture for `Product`/`ProductImage` in your unit test project from earlier sessions (Session 8/9 work), or should I construct them directly via the domain factory methods (`Product.Create(...)` then `product.AddImage(ProductImage.Create(...))`)? I don't want to duplicate a helper you already have.
+
+**3. Edge cases don't map cleanly onto this endpoint**
+The categories you listed — integer overflow, max string length, timezone boundaries — don't have an obvious target here: `DownloadProductImageQuery` only has two strings (`ProductId`, `FileName`), and there's no date/numeric logic in this handler. Rather than force-fit those, I'd propose substituting endpoint-relevant edge cases:
+- Filename matching is case-sensitive exact match (`FileName == request.FileName`) — test that a differently-cased filename is treated as not found (bug or intentional?)
+- Zero-byte stream returned from storage
+- Product with zero images vs. multiple images (correct one selected)
+- `fileStorage.DownloadAsync` throwing (e.g., MinIO object missing at storage layer even though DB record exists — a drift scenario) vs. a connection-level failure
+- Very long or unusual filename strings (not a true "overflow" but analogous boundary test)
+
+Are these acceptable substitutes, or did you have specific overflow/length/timezone scenarios in mind elsewhere in the pipeline (e.g., upload validation) that I'm missing context on?
+
+**4. Failure handling expectation**
+For "graceful infrastructure failures" — should the test suite just assert that a storage exception *propagates* (to be caught by your existing `ExceptionHandlingMiddleware`), since I don't see any try/catch in the handler currently? Or do you want the handler itself changed to catch/wrap storage failures (which would be a production code change, not just tests)?
+
+Once I know these four things I can generate the full test file(s) in one pass rather than iterating.
+
+second prompt:
+1- I want only unit tests targeting DownloadProductImageHandler.
+2- I do; I added them to the prompt. 
+3-These are acceptable substitutes.
+4-The test suite should only assert that a storage exception propagates.

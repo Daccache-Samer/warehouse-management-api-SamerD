@@ -9,5 +9,9 @@ public class ProductMappingProfile : Profile
     public ProductMappingProfile()
     {
         CreateMap<Product, ProductViewModel>();
+        CreateMap<Product, ExpiringProductViewModel>()
+            .ForMember(dest => dest.ExpiryDate, opt => opt.MapFrom(src => src.ExpiryDate))
+            .ForMember(dest => dest.DaysUntilExpiry,
+                opt => opt.MapFrom(src => (src.ExpiryDate.Date - DateTime.UtcNow.Date).Days));
     }
 }

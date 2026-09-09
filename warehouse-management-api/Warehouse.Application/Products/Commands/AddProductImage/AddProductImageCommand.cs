@@ -8,4 +8,4 @@ public record AddProductImageCommand(
     Stream Content,
     string FileName,
     long Length,
-    string ContentType) : IRequest<ProductViewModel>;
+    string ContentType) : IRequest<ProductViewModel>, IInvalidatesProductCache;

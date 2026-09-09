@@ -1,0 +1,12 @@
+﻿public record CreateShipmentRequest(Guid SupplierId);
+public record AssignProductRequest(Guid ProductId, int Quantity);
+public record UpdateShipmentStatusRequest(TrackingStatus Status);
+
+public record ShipmentResponse(
+    Guid Id, 
+    Guid SupplierId, 
+    string Status, 
+    List<ShipmentItemResponse> Items
+);
+
+public record ShipmentItemResponse(Guid ProductId, int Quantity);

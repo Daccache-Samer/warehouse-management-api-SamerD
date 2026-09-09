@@ -1,6 +1,5 @@
 using AutoMapper;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Logging;
 using Moq;
 using Warehouse.Api.UnitTests.TestUtilities.Builders;
@@ -16,7 +15,6 @@ namespace Warehouse.Api.UnitTests.ProductService;
 public class CreateProduct
 {
     private readonly Mock<IProductRepository> _productRepositoryMock = new();
-    private readonly Mock<IDistributedCache> _cacheMock = new();
     private readonly Mock<IEventPublisher> _eventPublisherMock = new();
     private readonly CreateProductHandler _handler;
 
@@ -24,7 +22,7 @@ public class CreateProduct
     {
         var loggerMock = new Mock<ILogger<CreateProductHandler>>();
         var correlationContextMock = new Mock<ICorrelationContext>();
-        
+
         var mapperConfig = new MapperConfiguration(cfg =>
         {
             cfg.CreateMap<Product, ProductViewModel>();
@@ -35,7 +33,6 @@ public class CreateProduct
             _productRepositoryMock.Object,
             mapper,
             loggerMock.Object,
-            _cacheMock.Object,
             _eventPublisherMock.Object,
             correlationContextMock.Object);
     }
@@ -46,7 +43,7 @@ public class CreateProduct
         // Arrange
         var command = new CreateProductCommand(
             "Test Product", "SKU-123", "Test Desc", 100m, 10, DateTime.UtcNow.AddYears(1));
-        _productRepositoryMock.Setup(repo => 
+        _productRepositoryMock.Setup(repo =>
                 repo.GetBySkuAsync(command.SKU, It.IsAny<CancellationToken>()))
             .ReturnsAsync((Product?)null);
 
@@ -58,13 +55,15 @@ public class CreateProduct
         result.Name.Should().Be("Test Product");
         result.SKU.Should().Be("SKU-123");
 
-        _productRepositoryMock.Verify(repo => 
+        _productRepositoryMock.Verify(repo =>
             repo.AddAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Once);
         _eventPublisherMock.Verify(pub => pub.PublishAsync(
-            It.IsAny<ProductCreatedEvent>(), EventTypes.ProductCreated, 
+            It.IsAny<ProductCreatedEvent>(), EventTypes.ProductCreated,
             It.IsAny<CancellationToken>()), Times.Once);
-        _cacheMock.Verify(cache => cache.RemoveAsync(
-            "ListProductsHandler_ListProductsQuery", It.IsAny<CancellationToken>()), Times.Once);
+
+        // Cache eviction assertion removed — see ProductCacheInvalidationBehaviorTests
+        // for coverage of the "ListProductsHandler_ListProductsQuery" removal,
+        // including the CreateProductCommand.ProductId => null case.
     }
 
     [Fact]
@@ -74,15 +73,15 @@ public class CreateProduct
         var command = new CreateProductCommand(
             "Test Product", "SKU-DUP", "Test Desc", 100m, 10, DateTime.UtcNow.AddYears(1));
         var existingProduct = new ProductBuilder().WithSku("SKU-DUP").Build();
-        
-        _productRepositoryMock.Setup(repo => 
+
+        _productRepositoryMock.Setup(repo =>
                 repo.GetBySkuAsync(command.SKU, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingProduct);
 
         // Act & Assert
-        await Assert.ThrowsAsync<ConflictException>(() => 
+        await Assert.ThrowsAsync<ConflictException>(() =>
             _handler.Handle(command, CancellationToken.None));
-        _productRepositoryMock.Verify(repo => 
+        _productRepositoryMock.Verify(repo =>
             repo.AddAsync(It.IsAny<Product>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -108,7 +107,6 @@ public class CreateProduct
         capturedProduct.Should().NotBeNull();
         capturedProduct.Id.Should().NotBeNullOrEmpty();
         capturedProduct.CreatedAt.Should().NotBe(default(DateTime));
-        // Verify it was created recently
         capturedProduct.CreatedAt.Should().BeCloseTo(DateTime.UtcNow, TimeSpan.FromSeconds(5));
     }
 }

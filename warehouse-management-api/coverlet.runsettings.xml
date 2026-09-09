@@ -8,7 +8,7 @@
             <DataCollector friendlyName="XPlat code coverage">
                 <Configuration>
                     <Format>cobertura</Format>
-                    <Include>[Warehouse.Domain]*,[Warehouse.Application]*,[warehouse_management_api]*</Include>
+                    <Include>[Warehouse.Domain]*,[Warehouse.Application]*,[Warehouse.Presentation]*,[warehouse_management_api]*</Include>
                     <ExcludeByFile>**/Migrations/**/*.cs</ExcludeByFile>
                     <Exclude>[*]*.Contracts.*,[*]*.ViewModels.*,[warehouse_management_api]Program</Exclude>
                 </Configuration>

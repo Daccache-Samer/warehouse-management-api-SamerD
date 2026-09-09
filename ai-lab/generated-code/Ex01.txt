@@ -1,0 +1,186 @@
+﻿// warehouse_management_api/Contracts/GetExpiringProductsRequest.cs
+using System.ComponentModel.DataAnnotations;
+
+namespace warehouse_management_api.Contracts;
+
+public class GetExpiringProductsRequest
+{
+    [Range(1, 365, ErrorMessage = "WithinDays must be between 1 and 365.")]
+    public int WithinDays { get; set; } = 30;
+}
+
+// Warehouse.Application/Products/ViewModels/ExpiringProductViewModel.cs
+namespace Warehouse.Application.Products.ViewModels;
+
+public class ExpiringProductViewModel : ProductViewModel
+{
+    public DateTime ExpiryDate { get; init; }
+    public int DaysUntilExpiry { get; init; }
+}  
+
+// Warehouse.Application/Products/Queries/GetExpiringProducts/GetExpiringProductsQuery.cs
+using MediatR;
+using Warehouse.Application.Products.ViewModels;
+
+namespace Warehouse.Application.Products.Queries.GetExpiringProducts;
+
+public record GetExpiringProductsQuery(int WithinDays) : IRequest<IReadOnlyList<ExpiringProductViewModel>>;
+
+// Warehouse.Application/Products/Queries/GetExpiringProducts/GetExpiringProductsHandler.cs
+using AutoMapper;
+using MediatR;
+using Warehouse.Application.Products.ViewModels;
+
+namespace Warehouse.Application.Products.Queries.GetExpiringProducts;
+
+public class GetExpiringProductsHandler(IProductRepository productRepository, IMapper mapper)
+    : IRequestHandler<GetExpiringProductsQuery, IReadOnlyList<ExpiringProductViewModel>>
+{
+    public async Task<IReadOnlyList<ExpiringProductViewModel>> Handle(
+        GetExpiringProductsQuery request, CancellationToken cancellationToken)
+    {
+        var products = await productRepository.GetExpiringProductsAsync(request.WithinDays, cancellationToken);
+
+        return mapper.Map<IReadOnlyList<ExpiringProductViewModel>>(products);
+    }
+}
+
+//
+CreateMap<Product, ExpiringProductViewModel>()
+    .ForMember(dest => dest.ExpiryDate, opt => opt.MapFrom(src => src.ExpiryDate))
+    .ForMember(dest => dest.DaysUntilExpiry,
+        opt => opt.MapFrom(src => (src.ExpiryDate.Date - DateTime.UtcNow.Date).Days));
+        
+[HttpGet("expiring-soon")]
+[Authorize(Policy = "ApiUser")]
+public async Task<ActionResult<IReadOnlyList<ExpiringProductViewModel>>> GetExpiringSoon(
+    [FromQuery] GetExpiringProductsRequest request, CancellationToken cancellationToken = default)
+{
+    var result = await mediator.Send(new GetExpiringProductsQuery(request.WithinDays), cancellationToken);
+    return Ok(result);
+}
+
+// Warehouse.Api.UnitTests/Products/Queries/GetExpiringProductsHandlerTests.cs
+using AutoMapper;
+using FluentAssertions;
+using Moq;
+using Warehouse.Application.Products;
+using Warehouse.Application.Products.Queries.GetExpiringProducts;
+using Warehouse.Application.Products.ViewModels;
+using Warehouse.DomainWarehouse.Domain.Products;
+using Xunit;
+
+namespace Warehouse.Api.UnitTests.Products.Queries;
+
+public class GetExpiringProductsHandlerTests
+{
+    private readonly Mock<IProductRepository> _repositoryMock = new();
+    private readonly Mock<IMapper> _mapperMock = new();
+    private readonly GetExpiringProductsHandler _handler;
+
+    public GetExpiringProductsHandlerTests()
+    {
+        _handler = new GetExpiringProductsHandler(_repositoryMock.Object, _mapperMock.Object);
+    }
+
+    [Fact]
+    public async Task Handle_ShouldPassWithinDaysToRepository()
+    {
+        // Arrange
+        var query = new GetExpiringProductsQuery(WithinDays: 15);
+        _repositoryMock
+            .Setup(r => r.GetExpiringProductsAsync(15, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Product>());
+        _mapperMock
+            .Setup(m => m.Map<IReadOnlyList<ExpiringProductViewModel>>(It.IsAny<IReadOnlyList<Product>>()))
+            .Returns(Array.Empty<ExpiringProductViewModel>());
+
+        // Act
+        await _handler.Handle(query, CancellationToken.None);
+
+        // Assert
+        _repositoryMock.Verify(r => r.GetExpiringProductsAsync(15, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ShouldReturnEmptyList_WhenNoProductsAreExpiring()
+    {
+        // Arrange
+        var query = new GetExpiringProductsQuery(WithinDays: 30);
+        _repositoryMock
+            .Setup(r => r.GetExpiringProductsAsync(30, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<Product>());
+        _mapperMock
+            .Setup(m => m.Map<IReadOnlyList<ExpiringProductViewModel>>(It.IsAny<IReadOnlyList<Product>>()))
+            .Returns(Array.Empty<ExpiringProductViewModel>());
+
+        // Act
+        var result = await _handler.Handle(query, CancellationToken.None);
+
+        // Assert
+        result.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Handle_ShouldReturnMappedViewModels_WhenProductsAreExpiring()
+    {
+        // Arrange
+        var product = Product.Create("Milk", "SKU-001", "Dairy", 2.5m, 10, DateTime.UtcNow.AddDays(5));
+        var expected = new ExpiringProductViewModel
+        {
+            Id = product.Id,
+            Name = "Milk",
+            SKU = "SKU-001",
+            ExpiryDate = product.ExpiryDate,
+            DaysUntilExpiry = 5
+        };
+
+        _repositoryMock
+            .Setup(r => r.GetExpiringProductsAsync(30, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Product> { product });
+        _mapperMock
+            .Setup(m => m.Map<IReadOnlyList<ExpiringProductViewModel>>(It.IsAny<IReadOnlyList<Product>>()))
+            .Returns(new List<ExpiringProductViewModel> { expected });
+
+        var query = new GetExpiringProductsQuery(WithinDays: 30);
+
+        // Act
+        var result = await _handler.Handle(query, CancellationToken.None);
+
+        // Assert
+        result.Should().ContainSingle()
+            .Which.Should().BeEquivalentTo(expected);
+    }
+}
+
+// Warehouse.Api.UnitTests/Contracts/GetExpiringProductsRequestTests.cs
+using System.ComponentModel.DataAnnotations;
+using FluentAssertions;
+using warehouse_management_api.Contracts;
+using Xunit;
+
+namespace Warehouse.Api.UnitTests.Contracts;
+
+public class GetExpiringProductsRequestTests
+{
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(366)]
+    public void WithinDays_ShouldFailValidation_WhenOutOfRange(int withinDays)
+    {
+        var request = new GetExpiringProductsRequest { WithinDays = withinDays };
+        var results = new List<ValidationResult>();
+
+        var isValid = Validator.TryValidateObject(
+            request, new ValidationContext(request), results, validateAllProperties: true);
+
+        isValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void WithinDays_ShouldDefaultTo30()
+    {
+        new GetExpiringProductsRequest().WithinDays.Should().Be(30);
+    }
+}

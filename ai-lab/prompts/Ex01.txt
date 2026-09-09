@@ -1,0 +1,10 @@
+Context: I am working on a warehouse management API project using a DDD architecture and CQRS. I am using PostgreSQL for the database, Redis for caching, Serilog for logging, RabbitMQ for intercommunication between microservices, Minio for object storage, and xUnit, Moq, and Fluent Assertions for testing. I want to create a new endpoint: GET /api/products/expiring-soon, which will fetch and return all products that are set to expire in the next 30 calendar days. 
+Role: Senior Software Engineer.
+Task:  Generate the required implementation for this endpoint:
+
+* The absolute controller action methods and route bindings.
+* The application-level logic queries and handlers filtering by expiration timestamps.
+* The fully validated request parameter shapes and Data Transfer Objects.
+* The accompanying unit tests and mock boundaries.                                                                 
+
+If you have any questions about the implementation, project, or anything related to them, ask before generating anything.
