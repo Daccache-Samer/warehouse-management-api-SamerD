@@ -1,15 +1,135 @@
-﻿services:
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/init-multiple-dbs.sh:ro
+   
+    networks:
+      - data-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - warehouse-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: warehouse-rabbitmq
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     environment:
-      RABBITMQ_DEFAULT_USER: warehouse
-      RABBITMQ_DEFAULT_PASS: warehouse
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "15672:15672"   
+    networks:
+      - messaging-net
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+  
+    networks:
+      - warehouse-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  warehouse-api:
+    build:
+      context: ./warehouse-management-api
+      dockerfile: Warehouse.Presentation/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    ports:
+      - "5005:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=WarehouseDb;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__Redis: "redis:6379"
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: ${RABBITMQ_USER}
+      RabbitMq__Password: ${RABBITMQ_PASSWORD}
+      RabbitMq__VirtualHost: "/"
+      RabbitMq__ExchangeName: warehouse.events
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_USE_SSL: "false"
+      MINIO_BUCKET: product-images
+      PROJECT_ID: ${FIREBASE_PROJECT_ID}
+      API_KEY: ${FIREBASE_API_KEY}
+      AUTHDOMAIN: ${FIREBASE_AUTH_DOMAIN}
+    volumes:
+      - ${FIREBASE_CREDENTIALS_PATH}:/app/warehouse-management-api-12faf-firebase-adminsdk-fbsvc-0c8a5b4099.json:ro
+    networks:
+      - warehouse-net
+      - data-net
+      - messaging-net
+
+  notifications-api:
+    build:
+      context: ./Warehouse.Notifications.Api
+      dockerfile: Notifications.Presentation/Dockerfile
+    depends_on:
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    ports:
+      - "5001:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=NotificationsDb;Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      RabbitMq__HostName: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: ${RABBITMQ_USER}
+      RabbitMq__Password: ${RABBITMQ_PASSWORD}
+      RabbitMq__VirtualHost: "/"
+      RabbitMq__ExchangeName: warehouse.events
+      RabbitMq__QueueName: notifications.warehouse-events
+      RabbitMq__MaxRetryAttempts: "3"
+      RabbitMq__RetryDelayBaseSeconds: "2"
+    networks:
+      - notifications-net
+      - data-net
+      - messaging-net
+
+networks:
+  warehouse-net:
+  notifications-net:
+  data-net:
+  messaging-net:
 
 volumes:
+  postgres_data:
   rabbitmq_data:
+  minio_data:

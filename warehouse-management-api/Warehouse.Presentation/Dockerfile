@@ -8,6 +8,9 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["Warehouse.Presentation/Warehouse.Presentation.csproj", "Warehouse.Presentation/"]
+COPY ["Warehouse.Application/Warehouse.Application.csproj", "Warehouse.Application/"]
+COPY ["Warehouse.Infrastructure/Warehouse.Infrastructure.csproj", "Warehouse.Infrastructure/"]
+COPY ["Warehouse.Domain/Warehouse.Domain.csproj", "Warehouse.Domain/"]
 RUN dotnet restore "Warehouse.Presentation/Warehouse.Presentation.csproj"
 COPY . .
 WORKDIR "/src/Warehouse.Presentation"
